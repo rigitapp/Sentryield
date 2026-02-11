@@ -1,0 +1,21 @@
+{
+  "name": "sentryield-onchain",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "hardhat compile",
+    "test": "hardhat test",
+    "deploy:adapter:monad": "hardhat run scripts/deploy-adapter.ts --network monad",
+    "deploy:monad": "hardhat run scripts/deploy.ts --network monad",
+    "configure:vault:monad": "hardhat run scripts/configure-vault.ts --network monad",
+    "rehearsal:fork": "hardhat run scripts/rehearsal-fork.ts --network hardhat"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@openzeppelin/contracts": "^5.2.0",
+    "dotenv": "^16.6.1",
+    "hardhat": "^2.26.3",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.2"
+  }
+}

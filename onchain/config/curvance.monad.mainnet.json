@@ -1,0 +1,16 @@
+{
+  "chainId": 143,
+  "rpcUrl": "https://rpc.monad.xyz",
+  "explorerTxBaseUrl": "https://monadscan.com/tx/",
+  "tokens": {
+    "USDC": "0x754704Bc059F8C67012fEd69BC8A327a5aafb603",
+    "MON": "0x0000000000000000000000000000000000000000",
+    "WMON": "0x3bd359C1119dA7Da1D913D1C4D2B7c461115433A"
+  },
+  "curvance": {
+    "centralRegistry": "0x1310f352f1389969Ece6741671c4B919523912fF",
+    "usdcMarket": "0x21aDBb60a5fB909e7F1fB48aACC4569615CD97b5",
+    "receiptToken": "0x21aDBb60a5fB909e7F1fB48aACC4569615CD97b5",
+    "routerOrController": "0xa6A2A92F126b79Ee0804845ee6B52899b4491093"
+  }
+}

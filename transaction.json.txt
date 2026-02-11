@@ -1,0 +1,46 @@
+{
+  "chainId": 143,
+  "meta": {
+    "name": "Sentryield Vault v1 - Allowlists Batch",
+    "description": "Multisig batch to configure allowlists on TreasuryVault (tokens + targets + pool). All calls go to the vault, value=0.",
+    "vault": "0x1360a18651830021080209DCd8831fB3CF99D2f2",
+    "adapter": "0xCD9F363C5B9BDAc667f5dfb6279698df83F11A98"
+  },
+  "transactions": [
+    {
+      "to": "0x1360a18651830021080209DCd8831fB3CF99D2f2",
+      "value": "0",
+      "data": "0x00571014000000000000000000000000754704bc059f8c67012fed69bc8a327a5aafb6030000000000000000000000000000000000000000000000000000000000000001",
+      "operation": "CALL",
+      "note": "setTokenAllowlist(0x754704Bc059F8C67012fEd69BC8A327a5aafb603, true)"
+    },
+    {
+      "to": "0x1360a18651830021080209DCd8831fB3CF99D2f2",
+      "value": "0",
+      "data": "0x0057101400000000000000000000000021adbb60a5fb909e7f1fb48aacc4569615cd97b50000000000000000000000000000000000000000000000000000000000000001",
+      "operation": "CALL",
+      "note": "setTokenAllowlist(0x21aDBb60a5fB909e7F1fB48aACC4569615CD97b5, true)"
+    },
+    {
+      "to": "0x1360a18651830021080209DCd8831fB3CF99D2f2",
+      "value": "0",
+      "data": "0xb25d6f52000000000000000000000000cd9f363c5b9bdac667f5dfb6279698df83f11a980000000000000000000000000000000000000000000000000000000000000001",
+      "operation": "CALL",
+      "note": "setTargetAllowlist(0xCD9F363C5B9BDAc667f5dfb6279698df83F11A98, true)"
+    },
+    {
+      "to": "0x1360a18651830021080209DCd8831fB3CF99D2f2",
+      "value": "0",
+      "data": "0xb25d6f5200000000000000000000000021adbb60a5fb909e7f1fb48aacc4569615cd97b50000000000000000000000000000000000000000000000000000000000000001",
+      "operation": "CALL",
+      "note": "setTargetAllowlist(0x21aDBb60a5fB909e7F1fB48aACC4569615CD97b5, true)"
+    },
+    {
+      "to": "0x1360a18651830021080209DCd8831fB3CF99D2f2",
+      "value": "0",
+      "data": "0x0cd3d1c600000000000000000000000021adbb60a5fb909e7f1fb48aacc4569615cd97b50000000000000000000000000000000000000000000000000000000000000001",
+      "operation": "CALL",
+      "note": "setPoolAllowlist(0x21aDBb60a5fB909e7F1fB48aACC4569615CD97b5, true)"
+    }
+  ]
+}
