@@ -16,11 +16,22 @@ import type { Rotation } from "@/lib/types";
 
 interface RotationsTableProps {
   rotations: Rotation[];
+  explorerTxBaseUrl: string;
+  isDryRun: boolean;
+  liveModeArmed: boolean;
 }
 
-export function RotationsTable({ rotations }: RotationsTableProps) {
+export function RotationsTable({
+  rotations,
+  explorerTxBaseUrl,
+  isDryRun,
+  liveModeArmed
+}: RotationsTableProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [pairFilter, setPairFilter] = useState<string>("all");
+  const pairOptions = useMemo(() => {
+    return Array.from(new Set(rotations.map((rotation) => rotation.pair))).sort();
+  }, [rotations]);
 
   const filteredRotations = useMemo(() => {
     return rotations.filter((rotation) => {
@@ -72,8 +83,11 @@ export function RotationsTable({ rotations }: RotationsTableProps) {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Pairs</SelectItem>
-              <SelectItem value="AUSD/MON">AUSD/MON</SelectItem>
-              <SelectItem value="USDC/MON">USDC/MON</SelectItem>
+              {pairOptions.map((pair) => (
+                <SelectItem key={pair} value={pair}>
+                  {pair}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -95,6 +109,7 @@ export function RotationsTable({ rotations }: RotationsTableProps) {
             <tbody className="text-sm">
               {filteredRotations.map((rotation) => {
                 const apyChange = rotation.newApy - rotation.oldApy;
+                const txHash = rotation.txHash;
                 return (
                   <tr
                     key={rotation.id}
@@ -136,15 +151,25 @@ export function RotationsTable({ rotations }: RotationsTableProps) {
                       </Badge>
                     </td>
                     <td className="py-3">
-                      <a
-                        href={`https://explorer.monad.xyz/tx/${rotation.txHash}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-primary hover:underline"
-                      >
-                        {truncateHash(rotation.txHash)}
-                        <ExternalLink className="h-3 w-3" />
-                      </a>
+                      {txHash ? (
+                        <a
+                          href={`${explorerTxBaseUrl}${txHash}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-primary hover:underline"
+                        >
+                          {truncateHash(txHash)}
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      ) : (
+                        <span className="text-muted-foreground">
+                          {isDryRun
+                            ? "Simulated"
+                            : liveModeArmed
+                              ? "—"
+                              : "Blocked"}
+                        </span>
+                      )}
                     </td>
                   </tr>
                 );

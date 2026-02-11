@@ -106,6 +106,7 @@ export const RUNTIME: RuntimeConfig = {
   executorPrivateKey: process.env.BOT_EXECUTOR_PRIVATE_KEY as RuntimeConfig["executorPrivateKey"],
   explorerTxBaseUrl: process.env.EXPLORER_TX_BASE_URL ?? CHAIN_CONFIG.explorerTxBaseUrl,
   dryRun: envBool("DRY_RUN", true),
+  liveModeArmed: envBool("LIVE_MODE_ARMED", false),
   scanIntervalSeconds: envNumber("SCAN_INTERVAL_SECONDS", 300),
   defaultTradeAmountRaw: envBigInt("DEFAULT_TRADE_AMOUNT_RAW", 1_000_000n),
   enterOnlyMode: envBool("ENTER_ONLY", false),
@@ -121,6 +122,11 @@ if (!RUNTIME.dryRun && RUNTIME.vaultAddress === ZERO_ADDRESS) {
 }
 if (!RUNTIME.dryRun && POOLS.some((pool) => pool.target === ZERO_ADDRESS)) {
   throw new Error("CURVANCE_TARGET_ADAPTER_ADDRESS is required when DRY_RUN=false");
+}
+if (!RUNTIME.dryRun && !RUNTIME.liveModeArmed) {
+  console.warn(
+    "LIVE_MODE_ARMED=false. Bot is in guarded live mode: simulations run, but broadcasts are blocked."
+  );
 }
 
 export const STATIC_PRICES_USD: Record<string, number> = {

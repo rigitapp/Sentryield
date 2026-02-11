@@ -6,6 +6,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsx src/index.ts",
+    "preflight": "tsx src/preflight.ts",
+    "reset-state": "tsx src/reset-state.ts",
+    "live-broadcast-once": "tsx src/live-broadcast-once.ts",
     "start": "node dist/index.js"
   },
   "dependencies": {

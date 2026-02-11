@@ -26,6 +26,7 @@ const ERC20_BALANCE_ABI = parseAbi([
 interface ExecutorConfig {
   vaultAddress: Address;
   dryRun: boolean;
+  liveModeArmed: boolean;
   defaultTradeAmountRaw: bigint;
   txDeadlineSeconds: number;
   maxPriceImpactBps: number;
@@ -338,6 +339,40 @@ export class ExecutorService {
         error: {
           code: "CONFIG_ERROR",
           message: "Wallet client/account is required when DRY_RUN=false."
+        }
+      };
+    }
+
+    // Safety interlock: allow live simulations but block all broadcasts
+    // until explicitly armed.
+    if (!this.config.liveModeArmed) {
+      try {
+        await this.publicClient.simulateContract({
+          account: this.walletClient.account,
+          address: this.config.vaultAddress,
+          abi: TREASURY_VAULT_ABI,
+          functionName: txRequest.functionName,
+          args: txRequest.args
+        } as never);
+      } catch (error) {
+        return {
+          txHash: null,
+          receipt: null,
+          error: {
+            code: "SIMULATION_FAILED",
+            message: `Simulation failed for ${txRequest.functionName}.`,
+            details: this.toErrorMessage(error)
+          }
+        };
+      }
+
+      return {
+        txHash: null,
+        receipt: null,
+        error: {
+          code: "POLICY_BLOCKED",
+          message:
+            "LIVE_MODE_ARMED=false; simulation passed but transaction broadcast is blocked."
         }
       };
     }

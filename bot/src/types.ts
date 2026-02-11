@@ -65,6 +65,7 @@ export interface RuntimeConfig {
   executorPrivateKey?: Hex;
   explorerTxBaseUrl: string;
   dryRun: boolean;
+  liveModeArmed: boolean;
   scanIntervalSeconds: number;
   defaultTradeAmountRaw: bigint;
   enterOnlyMode: boolean;

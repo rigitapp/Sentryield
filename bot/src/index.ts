@@ -68,6 +68,7 @@ async function main(): Promise<void> {
     {
       vaultAddress: RUNTIME.vaultAddress,
       dryRun: RUNTIME.dryRun,
+      liveModeArmed: RUNTIME.liveModeArmed,
       defaultTradeAmountRaw: RUNTIME.defaultTradeAmountRaw,
       txDeadlineSeconds: POLICY.txDeadlineSeconds,
       maxPriceImpactBps: POLICY.maxPriceImpactBps,
@@ -130,9 +131,13 @@ async function main(): Promise<void> {
       });
       if (!execution) return;
       if (execution.error) {
-        console.error(
-          `[execution-error] ${execution.error.code} | ${execution.error.message} | ${execution.error.details ?? "n/a"}`
-        );
+        const line =
+          `[execution-error] ${execution.error.code} | ${execution.error.message} | ${execution.error.details ?? "n/a"}`;
+        if (execution.error.code === "POLICY_BLOCKED") {
+          console.warn(line);
+        } else {
+          console.error(line);
+        }
         return;
       }
 

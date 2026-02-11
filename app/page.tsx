@@ -1,47 +1,20 @@
-import { Header } from "@/components/dashboard/header";
-import { CurrentPositionCard } from "@/components/dashboard/current-position-card";
-import { RiskGuardsCard } from "@/components/dashboard/risk-guards-card";
-import { ApyChart } from "@/components/dashboard/apy-chart";
-import { RotationsTable } from "@/components/dashboard/rotations-table";
-import { TweetFeed } from "@/components/dashboard/tweet-feed";
-import {
-  agentStatus,
-  currentPosition,
-  apySnapshots,
-  rotations,
-  guardStatus,
-  tweets,
-  nextTweetPreview,
-} from "@/lib/mock-data";
+import { DashboardLive } from "@/components/dashboard/dashboard-live";
+import { getDashboardData } from "@/lib/server/dashboard-data";
 
-export default function Dashboard() {
+export const dynamic = "force-dynamic";
+
+export default async function Dashboard() {
+  const initialData = await getDashboardData();
+  const refreshIntervalMs = Number(process.env.DASHBOARD_REFRESH_MS ?? "10000");
+  const safeRefreshIntervalMs =
+    Number.isFinite(refreshIntervalMs) && refreshIntervalMs > 0
+      ? refreshIntervalMs
+      : 10_000;
+
   return (
-    <div className="min-h-screen bg-background">
-      <Header status={agentStatus} />
-
-      <main className="container mx-auto p-4 lg:p-6">
-        <div className="grid gap-6 lg:grid-cols-12">
-          {/* Left Column - Position & Chart */}
-          <div className="space-y-6 lg:col-span-4">
-            <CurrentPositionCard position={currentPosition} />
-            <RiskGuardsCard guardStatus={guardStatus} />
-          </div>
-
-          {/* Right Column - Chart, Table, Tweets */}
-          <div className="space-y-6 lg:col-span-8">
-            <ApyChart snapshots={apySnapshots} />
-
-            <div className="grid gap-6 xl:grid-cols-5">
-              <div className="xl:col-span-3">
-                <RotationsTable rotations={rotations} />
-              </div>
-              <div className="xl:col-span-2">
-                <TweetFeed tweets={tweets} previewTweet={nextTweetPreview} />
-              </div>
-            </div>
-          </div>
-        </div>
-      </main>
-    </div>
+    <DashboardLive
+      initialData={initialData}
+      refreshIntervalMs={safeRefreshIntervalMs}
+    />
   );
 }

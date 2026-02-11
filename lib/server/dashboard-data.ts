@@ -1,0 +1,763 @@
+import "server-only";
+
+import { readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import type {
+  AgentStatus,
+  DashboardData,
+  GuardStatus,
+  GuardStatusLevel,
+  Position,
+  Rotation,
+  Snapshot,
+  Tweet
+} from "@/lib/types";
+
+type DecisionAction = "HOLD" | "ENTER" | "ROTATE" | "EXIT_TO_USDC";
+type BotTweetType = "DEPLOYED" | "ROTATED" | "EMERGENCY_EXIT";
+
+interface BotPosition {
+  poolId: string | null;
+  pair: string | null;
+  protocol: string | null;
+  enteredAt: number | null;
+  lpBalance: string;
+  lastNetApyBps: number;
+  parkedToken: "USDC" | null;
+}
+
+interface BotSnapshot {
+  poolId: string;
+  pair: string;
+  protocol: string;
+  timestamp: number;
+  incentiveAprBps: number;
+  netApyBps: number;
+  slippageBps: number;
+}
+
+interface BotDecision {
+  timestamp: number;
+  chosenPoolId: string | null;
+  reason: string;
+  action: DecisionAction;
+}
+
+interface BotTweet {
+  timestamp: number;
+  type: BotTweetType;
+  txHash: string | null;
+  body: string;
+}
+
+interface BotState {
+  position: BotPosition | null;
+  snapshots: BotSnapshot[];
+  decisions: BotDecision[];
+  tweets: BotTweet[];
+}
+
+const DEFAULT_STATE_PATH = join(process.cwd(), "bot", "data", "state.json");
+const CHAIN_CONFIG_PATH = join(
+  process.cwd(),
+  "bot",
+  "config",
+  "curvance.monad.mainnet.json"
+);
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+const DEFAULT_SCAN_INTERVAL_SECONDS = 300;
+const DEFAULT_MIN_HOLD_HOURS = 24;
+const DEFAULT_ROTATION_DELTA_PCT = 2;
+const DEFAULT_MAX_PAYBACK_HOURS = 72;
+const DEFAULT_EXPLORER_TX_BASE_URL = "https://monadscan.com/tx/";
+const DEFAULT_DEPEG_THRESHOLD_PCT = 1;
+const DEFAULT_SLIPPAGE_THRESHOLD_PCT = 0.3;
+const DEFAULT_APR_CLIFF_THRESHOLD_PCT = 50;
+const DEFAULT_USDC_DECIMALS = 6;
+
+interface ChainConfig {
+  chainId: number;
+  tokens: {
+    USDC: string;
+  };
+}
+
+const CHAIN_CONFIG = loadChainConfig();
+
+export async function getDashboardData(): Promise<DashboardData> {
+  const state = await readBotState();
+  const hasStateData =
+    Boolean(state.position) ||
+    state.snapshots.length > 0 ||
+    state.decisions.length > 0 ||
+    state.tweets.length > 0;
+
+  const poolMetaById = buildPoolMeta(state);
+  const snapshotsByPool = groupSnapshotsByPool(state.snapshots);
+  const activePoolId = state.position?.poolId ?? inferLatestPoolId(state.snapshots);
+  const latestSnapshot = getLatestSnapshot(state.snapshots);
+  const latestDecision = getLatestDecision(state.decisions);
+  const latestTimestamp = Math.max(
+    latestSnapshot?.timestamp ?? 0,
+    latestDecision?.timestamp ?? 0
+  );
+
+  const currentPosition = mapCurrentPosition(state, poolMetaById, snapshotsByPool);
+  const guardStatus = mapGuardStatus(state, activePoolId, latestSnapshot?.timestamp ?? null);
+  const agentStatus = deriveAgentStatus(latestTimestamp);
+  const apySnapshots = mapApySnapshots(state.snapshots, activePoolId);
+  const isDryRun = envBool("DRY_RUN", true);
+  const liveModeArmed = envBool("LIVE_MODE_ARMED", false);
+  const chainId = envNumber("MONAD_CHAIN_ID", CHAIN_CONFIG.chainId);
+  const vaultAddress = envString("VAULT_ADDRESS", ZERO_ADDRESS);
+  const usdcTokenAddress = envString("USDC_TOKEN_ADDRESS", CHAIN_CONFIG.tokens.USDC);
+  const usdcDecimals = Math.max(0, Math.floor(envNumber("USDC_DECIMALS", DEFAULT_USDC_DECIMALS)));
+  const explorerTxBaseUrl = envString(
+    "EXPLORER_TX_BASE_URL",
+    DEFAULT_EXPLORER_TX_BASE_URL
+  );
+  const rotations = mapRotations(state, poolMetaById, snapshotsByPool, isDryRun);
+  const tweets = mapTweets(state.tweets, isDryRun);
+  const nextTweetPreview = buildPreviewTweet(currentPosition, guardStatus, agentStatus);
+
+  return {
+    agentStatus,
+    currentPosition,
+    apySnapshots,
+    rotations,
+    guardStatus,
+    tweets,
+    nextTweetPreview,
+    updatedAt: toIsoString(latestTimestamp || nowSeconds()),
+    dataSource: hasStateData ? "bot_state" : "empty",
+    isDryRun,
+    liveModeArmed,
+    chainId,
+    vaultAddress,
+    usdcTokenAddress,
+    usdcDecimals,
+    explorerTxBaseUrl
+  };
+}
+
+async function readBotState(): Promise<BotState> {
+  const path = process.env.BOT_STATE_PATH?.trim() || DEFAULT_STATE_PATH;
+  try {
+    const raw = await readFile(path, "utf8");
+    const parsed = JSON.parse(raw) as Partial<BotState>;
+    return {
+      position: sanitizePosition(parsed.position),
+      snapshots: sanitizeSnapshots(parsed.snapshots),
+      decisions: sanitizeDecisions(parsed.decisions),
+      tweets: sanitizeTweets(parsed.tweets)
+    };
+  } catch {
+    return {
+      position: null,
+      snapshots: [],
+      decisions: [],
+      tweets: []
+    };
+  }
+}
+
+function sanitizePosition(input: unknown): BotPosition | null {
+  if (!input || typeof input !== "object") return null;
+  const candidate = input as Partial<BotPosition>;
+
+  return {
+    poolId: typeof candidate.poolId === "string" ? candidate.poolId : null,
+    pair: typeof candidate.pair === "string" ? candidate.pair : null,
+    protocol: typeof candidate.protocol === "string" ? candidate.protocol : null,
+    enteredAt: normalizeTimestamp(candidate.enteredAt),
+    lpBalance: typeof candidate.lpBalance === "string" ? candidate.lpBalance : "0",
+    lastNetApyBps: safeNumber(candidate.lastNetApyBps),
+    parkedToken: candidate.parkedToken === "USDC" ? "USDC" : null
+  };
+}
+
+function sanitizeSnapshots(input: unknown): BotSnapshot[] {
+  if (!Array.isArray(input)) return [];
+  const sanitized: BotSnapshot[] = [];
+
+  for (const item of input) {
+    if (!item || typeof item !== "object") continue;
+    const snapshot = item as Partial<BotSnapshot>;
+    if (typeof snapshot.poolId !== "string") continue;
+
+    const timestamp = normalizeTimestamp(snapshot.timestamp);
+    if (!timestamp) continue;
+
+    sanitized.push({
+      poolId: snapshot.poolId,
+      pair: typeof snapshot.pair === "string" ? snapshot.pair : "USDC/MON",
+      protocol: typeof snapshot.protocol === "string" ? snapshot.protocol : "Unknown",
+      timestamp,
+      incentiveAprBps: safeNumber(snapshot.incentiveAprBps),
+      netApyBps: safeNumber(snapshot.netApyBps),
+      slippageBps: safeNumber(snapshot.slippageBps)
+    });
+  }
+
+  return sanitized.sort((a, b) => a.timestamp - b.timestamp);
+}
+
+function sanitizeDecisions(input: unknown): BotDecision[] {
+  if (!Array.isArray(input)) return [];
+  const actions = new Set<DecisionAction>(["HOLD", "ENTER", "ROTATE", "EXIT_TO_USDC"]);
+  const sanitized: BotDecision[] = [];
+
+  for (const item of input) {
+    if (!item || typeof item !== "object") continue;
+    const decision = item as Partial<BotDecision>;
+    if (typeof decision.action !== "string" || !actions.has(decision.action as DecisionAction)) {
+      continue;
+    }
+
+    const timestamp = normalizeTimestamp(decision.timestamp);
+    if (!timestamp) continue;
+
+    sanitized.push({
+      timestamp,
+      chosenPoolId: typeof decision.chosenPoolId === "string" ? decision.chosenPoolId : null,
+      reason: typeof decision.reason === "string" ? decision.reason : decision.action,
+      action: decision.action as DecisionAction
+    });
+  }
+
+  return sanitized.sort((a, b) => a.timestamp - b.timestamp);
+}
+
+function sanitizeTweets(input: unknown): BotTweet[] {
+  if (!Array.isArray(input)) return [];
+  const types = new Set<BotTweetType>(["DEPLOYED", "ROTATED", "EMERGENCY_EXIT"]);
+  const sanitized: BotTweet[] = [];
+
+  for (const item of input) {
+    if (!item || typeof item !== "object") continue;
+    const tweet = item as Partial<BotTweet>;
+    if (typeof tweet.type !== "string" || !types.has(tweet.type as BotTweetType)) continue;
+
+    const timestamp = normalizeTimestamp(tweet.timestamp);
+    if (!timestamp) continue;
+
+    sanitized.push({
+      timestamp,
+      type: tweet.type as BotTweetType,
+      txHash: typeof tweet.txHash === "string" ? tweet.txHash : null,
+      body: typeof tweet.body === "string" ? tweet.body : ""
+    });
+  }
+
+  return sanitized.sort((a, b) => a.timestamp - b.timestamp);
+}
+
+function mapCurrentPosition(
+  state: BotState,
+  poolMetaById: Map<string, { pair: string; protocol: string }>,
+  snapshotsByPool: Map<string, BotSnapshot[]>
+): Position {
+  const minHoldHours = envNumber("MIN_HOLD_HOURS", DEFAULT_MIN_HOLD_HOURS);
+  const rotationDeltaPct = envNumber("ROTATION_DELTA_PCT", DEFAULT_ROTATION_DELTA_PCT);
+  const maxPaybackHours = envNumber("MAX_PAYBACK_HOURS", DEFAULT_MAX_PAYBACK_HOURS);
+  const now = nowSeconds();
+
+  if (!state.position?.poolId) {
+    const latest = getLatestSnapshot(state.snapshots);
+    const pair = state.position?.pair ?? latest?.pair ?? "USDC/MON";
+
+    return {
+      id: "parked-usdc",
+      pair,
+      protocol: "Treasury",
+      pool: "USDC Parking",
+      netApy: 0,
+      breakdown: {
+        fees: 0,
+        incentives: 0,
+        costs: 0
+      },
+      enteredAt: toIsoString(state.position?.enteredAt ?? latest?.timestamp ?? now),
+      intendedHoldHours: minHoldHours,
+      switchRule: {
+        minDelta: rotationDeltaPct,
+        maxPaybackHours
+      }
+    };
+  }
+
+  const poolId = state.position.poolId;
+  const poolMeta = poolMetaById.get(poolId);
+  const latestPoolSnapshot = getLatestSnapshot(snapshotsByPool.get(poolId));
+
+  const netApy = bpsToPercent(
+    latestPoolSnapshot?.netApyBps ?? state.position.lastNetApyBps
+  );
+  const incentives = bpsToPercent(latestPoolSnapshot?.incentiveAprBps ?? 0);
+  const costs = bpsToPercent(latestPoolSnapshot?.slippageBps ?? 0);
+  const fees = Math.max(netApy - incentives + costs, 0);
+
+  return {
+    id: poolId,
+    pair: state.position.pair ?? poolMeta?.pair ?? "USDC/MON",
+    protocol: state.position.protocol ?? poolMeta?.protocol ?? "Unknown",
+    pool: poolLabel(poolId, poolMetaById),
+    netApy: round(netApy, 1),
+    breakdown: {
+      fees: round(fees, 1),
+      incentives: round(incentives, 1),
+      costs: round(costs, 1)
+    },
+    enteredAt: toIsoString(state.position.enteredAt ?? now),
+    intendedHoldHours: minHoldHours,
+    switchRule: {
+      minDelta: rotationDeltaPct,
+      maxPaybackHours
+    }
+  };
+}
+
+function mapApySnapshots(snapshots: BotSnapshot[], activePoolId: string | null): Snapshot[] {
+  if (!snapshots.length) return [];
+  const selectedPoolId = activePoolId ?? inferLatestPoolId(snapshots);
+  if (!selectedPoolId) return [];
+
+  const poolSnapshots = snapshots.filter((snapshot) => snapshot.poolId === selectedPoolId);
+  if (!poolSnapshots.length) return [];
+
+  const latest = poolSnapshots[poolSnapshots.length - 1];
+  const sevenDaysAgo = latest.timestamp - 7 * 24 * 60 * 60;
+
+  return poolSnapshots
+    .filter((snapshot) => snapshot.timestamp >= sevenDaysAgo)
+    .slice(-200)
+    .map((snapshot) => ({
+      timestamp: toIsoString(snapshot.timestamp),
+      netApy: round(bpsToPercent(snapshot.netApyBps), 1)
+    }));
+}
+
+function mapRotations(
+  state: BotState,
+  poolMetaById: Map<string, { pair: string; protocol: string }>,
+  snapshotsByPool: Map<string, BotSnapshot[]>,
+  isDryRun: boolean
+): Rotation[] {
+  const actionToTweetType: Record<Exclude<DecisionAction, "HOLD">, BotTweetType> = {
+    ENTER: "DEPLOYED",
+    ROTATE: "ROTATED",
+    EXIT_TO_USDC: "EMERGENCY_EXIT"
+  };
+
+  const rotationDecisions = state.decisions.filter(
+    (decision) => decision.action !== "HOLD"
+  ) as Array<Omit<BotDecision, "action"> & { action: Exclude<DecisionAction, "HOLD"> }>;
+
+  const tweetPool = state.tweets.filter((tweet) => Boolean(tweet.txHash));
+  const consumedTweetIndexes = new Set<number>();
+  const rows: Rotation[] = [];
+
+  let currentPoolId: string | null = null;
+  for (const decision of rotationDecisions) {
+    const fromPoolId = currentPoolId;
+    const toPoolId = decision.action === "EXIT_TO_USDC" ? null : decision.chosenPoolId;
+
+    const oldApy = round(resolveNetApyAt(snapshotsByPool, fromPoolId, decision.timestamp), 1);
+    const newApy = round(resolveNetApyAt(snapshotsByPool, toPoolId, decision.timestamp), 1);
+    const pair = inferPair(fromPoolId, toPoolId, poolMetaById);
+    const txHash = takeNearestTxHash(
+      tweetPool,
+      consumedTweetIndexes,
+      actionToTweetType[decision.action],
+      decision.timestamp
+    );
+    const safeTxHash =
+      txHash && looksSyntheticTxHash(txHash) ? null : txHash;
+
+    rows.push({
+      id: `rot-${decision.timestamp}-${rows.length + 1}`,
+      timestamp: toIsoString(decision.timestamp),
+      fromPool: fromPoolId
+        ? poolLabel(fromPoolId, poolMetaById)
+        : decision.action === "ENTER"
+          ? "USDC Parking"
+          : "Unknown",
+      toPool: toPoolId ? poolLabel(toPoolId, poolMetaById) : "USDC Parking",
+      oldApy,
+      newApy,
+      reason: decision.reason,
+      txHash: isDryRun ? null : safeTxHash,
+      pair
+    });
+
+    currentPoolId = toPoolId;
+  }
+
+  return rows.sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp));
+}
+
+function mapGuardStatus(
+  state: BotState,
+  activePoolId: string | null,
+  latestSnapshotTs: number | null
+): GuardStatus {
+  const depegThreshold = envNumber("DEPEG_THRESHOLD_PCT", DEFAULT_DEPEG_THRESHOLD_PCT);
+  const slippageThreshold = envNumber(
+    "SLIPPAGE_THRESHOLD_PCT",
+    DEFAULT_SLIPPAGE_THRESHOLD_PCT
+  );
+  const aprCliffThreshold = envNumber(
+    "APR_CLIFF_THRESHOLD_PCT",
+    DEFAULT_APR_CLIFF_THRESHOLD_PCT
+  );
+
+  const ausdPrice = envNumber("PRICE_AUSD_USD", 1);
+  const usdcPrice = envNumber("PRICE_USDC_USD", 1);
+  const depegCurrent = Math.max(
+    Math.abs(ausdPrice - 1) * 100,
+    Math.abs(usdcPrice - 1) * 100
+  );
+
+  const latestSnapshot = getLatestSnapshot(
+    activePoolId
+      ? state.snapshots.filter((snapshot) => snapshot.poolId === activePoolId)
+      : state.snapshots
+  );
+  const slippageCurrent = bpsToPercent(latestSnapshot?.slippageBps ?? 0);
+  const aprDropCurrent = getCurrentAprDropPercent(state.snapshots, activePoolId);
+
+  return {
+    depegGuard: {
+      threshold: round(depegThreshold, 2),
+      status: thresholdToLevel(depegCurrent, depegThreshold),
+      currentValue: round(depegCurrent, 2)
+    },
+    slippageLimit: {
+      threshold: round(slippageThreshold, 2),
+      status: thresholdToLevel(slippageCurrent, slippageThreshold),
+      currentValue: round(slippageCurrent, 2)
+    },
+    aprCliff: {
+      threshold: round(aprCliffThreshold, 1),
+      status: thresholdToLevel(aprDropCurrent, aprCliffThreshold),
+      currentDrop: round(aprDropCurrent, 1)
+    },
+    lastCheckTime: toIsoString(latestSnapshotTs ?? nowSeconds())
+  };
+}
+
+function mapTweets(tweets: BotTweet[], isDryRun: boolean): Tweet[] {
+  return [...tweets]
+    .sort((a, b) => b.timestamp - a.timestamp)
+    .slice(0, 12)
+    .map((tweet, index) => ({
+      id: `tweet-${tweet.timestamp}-${index}`,
+      content: sanitizeTweetBody(tweet.body, isDryRun),
+      timestamp: toIsoString(tweet.timestamp),
+      type: mapTweetType(tweet.type)
+    }));
+}
+
+function buildPreviewTweet(
+  currentPosition: Position,
+  guardStatus: GuardStatus,
+  agentStatus: AgentStatus
+): Tweet {
+  const guardLevels = [
+    guardStatus.depegGuard.status,
+    guardStatus.slippageLimit.status,
+    guardStatus.aprCliff.status
+  ];
+  const allGreen = guardLevels.every((level) => level === "green");
+  const hasRed = guardLevels.some((level) => level === "red");
+  const guardSummary = allGreen ? "GREEN" : hasRed ? "RED ALERT" : "YELLOW WATCH";
+
+  const content = [
+    "STATUS UPDATE: Monad Yield Agent",
+    "",
+    `Position: ${currentPosition.pair} (${currentPosition.pool})`,
+    `Net APY: ${currentPosition.netApy.toFixed(1)}%`,
+    `Guards: ${guardSummary}`,
+    `Agent: ${agentStatus}`,
+    "",
+    "#Monad #DeFi #YieldAutomation"
+  ].join("\n");
+
+  return {
+    id: "preview",
+    content,
+    timestamp: "",
+    type: agentStatus === "ACTIVE" ? "DEPLOYED" : "ALERT"
+  };
+}
+
+function deriveAgentStatus(latestTimestamp: number): AgentStatus {
+  if (!latestTimestamp) return "PAUSED";
+  const scanInterval = envNumber("SCAN_INTERVAL_SECONDS", DEFAULT_SCAN_INTERVAL_SECONDS);
+  const stalenessSeconds = nowSeconds() - latestTimestamp;
+  return stalenessSeconds <= scanInterval * 3 ? "ACTIVE" : "PAUSED";
+}
+
+function buildPoolMeta(
+  state: BotState
+): Map<string, { pair: string; protocol: string }> {
+  const map = new Map<string, { pair: string; protocol: string }>();
+  for (const snapshot of state.snapshots) {
+    map.set(snapshot.poolId, {
+      pair: snapshot.pair,
+      protocol: snapshot.protocol
+    });
+  }
+
+  if (state.position?.poolId) {
+    const existing = map.get(state.position.poolId);
+    map.set(state.position.poolId, {
+      pair: state.position.pair ?? existing?.pair ?? "USDC/MON",
+      protocol: state.position.protocol ?? existing?.protocol ?? "Unknown"
+    });
+  }
+
+  return map;
+}
+
+function groupSnapshotsByPool(snapshots: BotSnapshot[]): Map<string, BotSnapshot[]> {
+  const grouped = new Map<string, BotSnapshot[]>();
+  for (const snapshot of snapshots) {
+    const existing = grouped.get(snapshot.poolId) ?? [];
+    existing.push(snapshot);
+    grouped.set(snapshot.poolId, existing);
+  }
+
+  for (const [poolId, poolSnapshots] of grouped) {
+    grouped.set(
+      poolId,
+      [...poolSnapshots].sort((a, b) => a.timestamp - b.timestamp)
+    );
+  }
+
+  return grouped;
+}
+
+function inferLatestPoolId(snapshots: BotSnapshot[]): string | null {
+  const latest = getLatestSnapshot(snapshots);
+  return latest?.poolId ?? null;
+}
+
+function getLatestSnapshot(
+  snapshots: BotSnapshot[] | undefined
+): BotSnapshot | undefined {
+  if (!snapshots?.length) return undefined;
+  return snapshots[snapshots.length - 1];
+}
+
+function getLatestDecision(
+  decisions: BotDecision[] | undefined
+): BotDecision | undefined {
+  if (!decisions?.length) return undefined;
+  return decisions[decisions.length - 1];
+}
+
+function poolLabel(
+  poolId: string,
+  poolMetaById: Map<string, { pair: string; protocol: string }>
+): string {
+  const meta = poolMetaById.get(poolId);
+  if (meta) return `${meta.protocol} ${meta.pair}`;
+  return poolId
+    .split(/[-_]/g)
+    .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function inferPair(
+  fromPoolId: string | null,
+  toPoolId: string | null,
+  poolMetaById: Map<string, { pair: string; protocol: string }>
+): string {
+  if (toPoolId) return poolMetaById.get(toPoolId)?.pair ?? "USDC/MON";
+  if (fromPoolId) return poolMetaById.get(fromPoolId)?.pair ?? "USDC/MON";
+  return "USDC/MON";
+}
+
+function resolveNetApyAt(
+  snapshotsByPool: Map<string, BotSnapshot[]>,
+  poolId: string | null,
+  timestamp: number
+): number {
+  if (!poolId) return 0;
+  const snapshots = snapshotsByPool.get(poolId);
+  if (!snapshots?.length) return 0;
+
+  let candidate: BotSnapshot | null = null;
+  for (const snapshot of snapshots) {
+    if (snapshot.timestamp <= timestamp) {
+      candidate = snapshot;
+      continue;
+    }
+    break;
+  }
+
+  return bpsToPercent((candidate ?? snapshots[0]).netApyBps);
+}
+
+function getCurrentAprDropPercent(
+  snapshots: BotSnapshot[],
+  activePoolId: string | null
+): number {
+  if (!snapshots.length) return 0;
+
+  const scoped = activePoolId
+    ? snapshots.filter((snapshot) => snapshot.poolId === activePoolId)
+    : snapshots;
+  if (scoped.length < 2) return 0;
+
+  const latest = scoped[scoped.length - 1];
+  const previous = scoped[scoped.length - 2];
+  if (previous.incentiveAprBps <= 0) return 0;
+
+  const dropBps = previous.incentiveAprBps - latest.incentiveAprBps;
+  if (dropBps <= 0) return 0;
+  return (dropBps / previous.incentiveAprBps) * 100;
+}
+
+function thresholdToLevel(current: number, threshold: number): GuardStatusLevel {
+  if (threshold <= 0) return "green";
+  if (current <= threshold * 0.75) return "green";
+  if (current <= threshold) return "yellow";
+  return "red";
+}
+
+function takeNearestTxHash(
+  tweets: BotTweet[],
+  consumedTweetIndexes: Set<number>,
+  expectedType: BotTweetType,
+  decisionTimestamp: number
+): string | null {
+  let bestIndex = -1;
+  let bestDistance = Number.POSITIVE_INFINITY;
+
+  for (let index = 0; index < tweets.length; index += 1) {
+    if (consumedTweetIndexes.has(index)) continue;
+    const tweet = tweets[index];
+    if (tweet.type !== expectedType || !tweet.txHash) continue;
+
+    const distance = Math.abs(tweet.timestamp - decisionTimestamp);
+    if (distance <= 15 * 60 && distance < bestDistance) {
+      bestDistance = distance;
+      bestIndex = index;
+    }
+  }
+
+  if (bestIndex === -1) return null;
+  consumedTweetIndexes.add(bestIndex);
+  return tweets[bestIndex].txHash;
+}
+
+function mapTweetType(type: BotTweetType): Tweet["type"] {
+  if (type === "EMERGENCY_EXIT") return "ALERT";
+  return type;
+}
+
+function sanitizeTweetBody(body: string, isDryRun: boolean): string {
+  const hasSyntheticHash = containsSyntheticTxHash(body);
+  if (!isDryRun && !hasSyntheticHash) return body;
+  return body.replace(
+    /Tx:\s+\S+/gi,
+    isDryRun ? "Tx: simulated (dry run)" : "Tx: simulated (historical dry run)"
+  );
+}
+
+function containsSyntheticTxHash(body: string): boolean {
+  const match = body.match(/0x[0-9a-fA-F]{64}/);
+  if (!match) return false;
+  return looksSyntheticTxHash(match[0]);
+}
+
+function looksSyntheticTxHash(hash: string): boolean {
+  const normalized = hash.toLowerCase();
+  if (!/^0x[0-9a-f]{64}$/.test(normalized)) return false;
+  const hex = normalized.slice(2);
+  const firstNonZero = hex.search(/[1-9a-f]/);
+  if (firstNonZero === -1) return true;
+  // Synthetic hashes in this project are timestamp hex left-padded with zeros.
+  return firstNonZero >= 48;
+}
+
+function safeNumber(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
+}
+
+function normalizeTimestamp(value: unknown): number | null {
+  const parsed = safeNumber(value);
+  if (!parsed) return null;
+  return parsed > 1_000_000_000_000 ? Math.floor(parsed / 1000) : Math.floor(parsed);
+}
+
+function bpsToPercent(bps: number): number {
+  return bps / 100;
+}
+
+function envNumber(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function envString(name: string, fallback: string): string {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const trimmed = raw.trim();
+  return trimmed || fallback;
+}
+
+function envBool(name: string, fallback: boolean): boolean {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  return raw.toLowerCase() === "true";
+}
+
+function loadChainConfig(): ChainConfig {
+  try {
+    const raw = readFileSync(CHAIN_CONFIG_PATH, "utf8");
+    const parsed = JSON.parse(raw) as Partial<ChainConfig>;
+    return {
+      chainId:
+        typeof parsed.chainId === "number" && Number.isFinite(parsed.chainId)
+          ? parsed.chainId
+          : 143,
+      tokens: {
+        USDC:
+          typeof parsed.tokens?.USDC === "string"
+            ? parsed.tokens.USDC
+            : "0x754704Bc059F8C67012fEd69BC8A327a5aafb603"
+      }
+    };
+  } catch {
+    return {
+      chainId: 143,
+      tokens: {
+        USDC: "0x754704Bc059F8C67012fEd69BC8A327a5aafb603"
+      }
+    };
+  }
+}
+
+function toIsoString(seconds: number): string {
+  return new Date(seconds * 1000).toISOString();
+}
+
+function nowSeconds(): number {
+  return Math.floor(Date.now() / 1000);
+}
+
+function round(value: number, decimals = 2): number {
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
+}

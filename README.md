@@ -75,6 +75,23 @@ Both files intentionally contain identical address payload:
 6. Run fork rehearsal script before live bot execution.
 7. Start bot with training wheels first.
 
+### Guarded live mode (recommended)
+
+To prevent accidental mainnet broadcasts while validating readiness:
+
+- set `DRY_RUN=false`
+- keep `LIVE_MODE_ARMED=false` (broadcast block enabled)
+- run bot preflight checks:
+
+```bash
+cd bot
+npm run preflight
+```
+
+Only after preflight passes and you explicitly approve broadcast, set:
+
+- `LIVE_MODE_ARMED=true`
+
 ## Commands
 
 ### Onchain build + tests
@@ -112,6 +129,7 @@ npm run dev
 ```bash
 cd bot
 # DRY_RUN=false
+# LIVE_MODE_ARMED=false   # guarded live mode (no broadcasts)
 # VAULT_ADDRESS=<deployed vault>
 # CURVANCE_TARGET_ADAPTER_ADDRESS=<deployed adapter>
 # BOT_EXECUTOR_PRIVATE_KEY=<executor key>
@@ -128,3 +146,24 @@ npm run dev
 - Bot starts in training wheels mode (`ENTER_ONLY=true`) for initial monitoring window.
 - Alerting/observability enabled for failed simulations, pauses, and execution errors.
 - Private keys stored in secure secret manager (not plaintext files).
+
+## True Live Test Runbook (UI deposit + broadcast)
+
+1. Set bot to guarded live mode first:
+   - `DRY_RUN=false`
+   - `LIVE_MODE_ARMED=false`
+2. Run read-only preflight:
+   - `cd bot && npm run preflight`
+3. Start UI + bot loop:
+   - `cd . && npm run dev`
+   - `cd bot && npm run dev`
+4. From UI:
+   - connect wallet (Injected / Coinbase / WalletConnect)
+   - switch to Monad chain
+   - use **Deposit USDC To Vault** card to transfer USDC to `VAULT_ADDRESS`
+5. Optional clean-cycle reset (backs up old state first):
+   - `cd bot && npm run reset-state`
+6. Re-run preflight and confirm `vault.usdc_balance` is non-zero.
+7. Run one controlled armed cycle (no permanent `.env` edits needed):
+   - `cd bot && npm run live-broadcast-once`
+9. Verify real transaction hash on Monadscan and in dashboard history.
