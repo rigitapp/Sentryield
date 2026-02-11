@@ -5,8 +5,8 @@ import { ArrowDownToLine, ExternalLink, Loader2 } from "lucide-react";
 import { erc20Abi, formatUnits, isAddress, parseUnits } from "viem";
 import {
   useAccount,
-  useBalance,
   useChainId,
+  useReadContract,
   useSwitchChain,
   useWaitForTransactionReceipt,
   useWriteContract
@@ -59,17 +59,20 @@ export function DepositUsdcCard({
     return isAddress(vaultAddress) ? (vaultAddress as `0x${string}`) : null;
   }, [vaultAddress]);
 
-  const { data: walletBalance } = useBalance({
-    address,
-    token: tokenAddress ?? undefined,
+  const { data: walletUsdcBalance } = useReadContract({
+    abi: erc20Abi,
+    address: tokenAddress ?? undefined,
+    functionName: "balanceOf",
+    args: address ? [address] : undefined,
     chainId,
     query: {
       enabled: Boolean(address && tokenAddress)
     }
   });
 
-  const balanceText = walletBalance
-    ? formatUnits(walletBalance.value, usdcDecimals)
+  const walletBalanceValue = typeof walletUsdcBalance === "bigint" ? walletUsdcBalance : null;
+  const balanceText = walletBalanceValue !== null
+    ? formatUnits(walletBalanceValue, usdcDecimals)
     : null;
 
   const txUrl = txHash ? `${explorerTxBaseUrl}${txHash}` : null;
@@ -105,7 +108,7 @@ export function DepositUsdcCard({
       setLocalError("Amount must be greater than zero.");
       return;
     }
-    if (walletBalance && amountRaw > walletBalance.value) {
+    if (walletBalanceValue !== null && amountRaw > walletBalanceValue) {
       setLocalError("Insufficient USDC wallet balance.");
       return;
     }

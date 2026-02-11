@@ -148,7 +148,7 @@ export const tweets: Tweet[] = [
 export const nextTweetPreview: Tweet = {
   id: "preview",
   content:
-    "🤖 STATUS UPDATE: Monad Yield Agent\n\n📍 Current Position: AUSD/MON Concentrated\n📈 Net APY: 24.7%\n⏱️ Holding for: 12h 15m\n\n🛡️ All guards: ✅ GREEN\n\n#Monad #DeFi #AI",
+    "🤖 STATUS UPDATE: Sentryield\n\n📍 Current Position: AUSD/MON Concentrated\n📈 Net APY: 24.7%\n⏱️ Holding for: 12h 15m\n\n🛡️ All guards: ✅ GREEN\n\n#Monad #DeFi #AI",
   timestamp: "",
   type: "DEPLOYED",
 };

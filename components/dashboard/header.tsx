@@ -37,17 +37,29 @@ export function Header({ status }: HeaderProps) {
   }, []);
 
   const isWrongNetwork = isConnected && chainId !== targetChainId;
-  const hasWalletConnect = Boolean(
-    process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID?.trim()
+  const hasWalletConnect = connectors.some((connector) =>
+    connector.name.toLowerCase().includes("walletconnect")
   );
   const pendingConnectorId = variables?.connector?.id;
   const activeError = walletError ?? connectError?.message ?? null;
 
   return (
     <header className="flex items-center justify-between border-b border-border px-6 py-4">
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
+        <div className="flex h-8 w-8 items-center justify-center">
+          <img
+            src="/SentryieldIconBlack.svg"
+            alt="Sentryield logo"
+            className="h-7 w-7 dark:hidden"
+          />
+          <img
+            src="/SentryieldIconWhite.svg"
+            alt="Sentryield logo"
+            className="hidden h-7 w-7 dark:block"
+          />
+        </div>
         <h1 className="text-xl font-semibold text-foreground">
-          Monad Yield Agent
+          Sentryield
         </h1>
         <Badge
           variant={status === "ACTIVE" ? "default" : "secondary"}
@@ -110,7 +122,7 @@ export function Header({ status }: HeaderProps) {
                     <>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem disabled>
-                        WalletConnect disabled (set NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID)
+                        WalletConnect unavailable (set NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID and redeploy)
                       </DropdownMenuItem>
                     </>
                   ) : null}

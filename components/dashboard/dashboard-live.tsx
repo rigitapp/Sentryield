@@ -89,7 +89,7 @@ export function DashboardLive({
       <main className="container mx-auto p-4 lg:p-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs text-muted-foreground">
-            Source: {data.dataSource === "bot_state" ? "bot/data/state.json" : "empty state"}
+            Source: {data.dataSource === "bot_state" ? "bot state" : "empty state"}
           </p>
           <p className="text-xs text-muted-foreground">
             {isRefreshing ? "Refreshing..." : `Last sync: ${lastSyncLabel}`}

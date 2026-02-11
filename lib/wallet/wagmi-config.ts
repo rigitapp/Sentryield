@@ -6,13 +6,20 @@ import { monadMainnet } from "@/lib/wallet/monad-chain";
 
 const rpcUrl = process.env.NEXT_PUBLIC_MONAD_RPC_URL || "https://rpc.monad.xyz";
 const walletConnectProjectId =
-  process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "";
+  process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID?.trim() || "";
+const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://sentryield.vercel.app";
+const appBaseUrl = appUrl.replace(/\/$/, "");
+const configuredIconUrl = process.env.NEXT_PUBLIC_APP_ICON_URL?.trim() || "";
+const iconUrl =
+  configuredIconUrl !== ""
+    ? encodeURI(configuredIconUrl)
+    : `${appBaseUrl}/Sentryield%20Icon%20Black.png`;
 
 const connectors = [
   injected(),
   coinbaseWallet({
-    appName: "Monad Yield Agent",
-    appLogoUrl: "/icon.svg"
+    appName: "Sentryield",
+    appLogoUrl: "/Sentryield%20Icon%20Black.svg"
   }),
   ...(walletConnectProjectId
     ? [
@@ -20,10 +27,10 @@ const connectors = [
           projectId: walletConnectProjectId,
           showQrModal: true,
           metadata: {
-            name: "Monad Yield Agent",
+            name: "Sentryield",
             description: "Sentryield dashboard and automation controls",
-            url: "http://localhost:3000",
-            icons: ["http://localhost:3000/icon-light-32x32.png"]
+            url: appUrl,
+            icons: [iconUrl]
           }
         })
       ]

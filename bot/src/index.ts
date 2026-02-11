@@ -14,6 +14,7 @@ import { POOL_BY_ID, POOLS, POLICY, RUNTIME, STATIC_PRICES_USD, TOKENS } from ".
 import { DecisionService } from "./services/decision.js";
 import { ExecutorService } from "./services/executor.js";
 import { ScannerService } from "./services/scanner.js";
+import { BotStatusServer, type BotRuntimeStatus } from "./services/status-server.js";
 import { ConsoleXClient, TweeterService } from "./services/tweeter.js";
 import { StaticPriceOracle } from "./services/apy.js";
 import { JsonDb } from "./storage/db.js";
@@ -21,6 +22,24 @@ import type { ExecutionResult, TweetRecord } from "./types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DB_PATH = join(__dirname, "..", "data", "state.json");
+
+function envBool(name: string, fallback: boolean): boolean {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  return raw.toLowerCase() === "true";
+}
+
+function envInteger(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.floor(value);
+}
+
+function nowIso(): string {
+  return new Date().toISOString();
+}
 
 function makeClients(): {
   publicClient: PublicClient;
@@ -93,6 +112,57 @@ async function main(): Promise<void> {
     },
     new ConsoleXClient()
   );
+  const runOnce = envBool("RUN_ONCE", true);
+
+  const runtimeStatus: BotRuntimeStatus = {
+    service: "sentryield-bot",
+    startedAt: nowIso(),
+    runMode: runOnce ? "once" : "loop",
+    scanIntervalSeconds: RUNTIME.scanIntervalSeconds,
+    staleAfterSeconds: envInteger(
+      "BOT_HEALTH_STALE_SECONDS",
+      Math.max(RUNTIME.scanIntervalSeconds * 3, 60)
+    ),
+    inFlight: false,
+    totalTicks: 0,
+    successfulTicks: 0,
+    failedTicks: 0,
+    lastTickStartedAt: null,
+    lastTickFinishedAt: null,
+    lastSuccessfulTickAt: null,
+    lastErrorAt: null,
+    lastErrorMessage: null
+  };
+
+  const statusServerEnabled = envBool("BOT_STATUS_SERVER_ENABLED", !runOnce);
+  const statusServerRequired = envBool("BOT_STATUS_SERVER_REQUIRED", false);
+  const statusServerHost = process.env.BOT_STATUS_HOST?.trim() || "0.0.0.0";
+  const statusServerPort = envInteger("BOT_STATUS_PORT", 8787);
+  const statusAuthToken = process.env.BOT_STATUS_AUTH_TOKEN?.trim() || "";
+  const statusServer = statusServerEnabled
+    ? new BotStatusServer({
+        host: statusServerHost,
+        port: statusServerPort,
+        authToken: statusAuthToken,
+        statusProvider: () => ({ ...runtimeStatus }),
+        stateProvider: () => db.getState()
+      })
+    : null;
+  let startedStatusServer: BotStatusServer | null = null;
+  if (statusServer) {
+    try {
+      await statusServer.start();
+      startedStatusServer = statusServer;
+      console.log(`[status-server] listening on http://${statusServerHost}:${statusServerPort}`);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unknown status server startup error.";
+      if (statusServerRequired) {
+        throw error;
+      }
+      console.warn(`[status-server] disabled (startup failed): ${message}`);
+    }
+  }
 
   let inFlight = false;
   const tick = async (): Promise<void> => {
@@ -102,6 +172,11 @@ async function main(): Promise<void> {
     }
 
     inFlight = true;
+    runtimeStatus.inFlight = true;
+    runtimeStatus.totalTicks += 1;
+    runtimeStatus.lastTickStartedAt = nowIso();
+    let tickFailed = false;
+
     try {
       const nowTs = Math.floor(Date.now() / 1000);
       const stateBefore = await db.getState();
@@ -133,6 +208,8 @@ async function main(): Promise<void> {
       if (execution.error) {
         const line =
           `[execution-error] ${execution.error.code} | ${execution.error.message} | ${execution.error.details ?? "n/a"}`;
+        runtimeStatus.lastErrorAt = nowIso();
+        runtimeStatus.lastErrorMessage = line;
         if (execution.error.code === "POLICY_BLOCKED") {
           console.warn(line);
         } else {
@@ -153,22 +230,38 @@ async function main(): Promise<void> {
       }
       console.log(`[execution] ${execution.action} | tx=${execution.txHashes.join(",")}`);
     } catch (error) {
+      tickFailed = true;
+      runtimeStatus.lastErrorAt = nowIso();
+      runtimeStatus.lastErrorMessage =
+        error instanceof Error ? error.message : String(error);
       console.error("Tick failed:", error);
     } finally {
       inFlight = false;
+      runtimeStatus.inFlight = false;
+      runtimeStatus.lastTickFinishedAt = nowIso();
+      if (tickFailed) {
+        runtimeStatus.failedTicks += 1;
+      } else {
+        runtimeStatus.successfulTicks += 1;
+        runtimeStatus.lastSuccessfulTickAt = runtimeStatus.lastTickFinishedAt;
+      }
     }
   };
 
-  const runOnce = (process.env.RUN_ONCE ?? "true").toLowerCase() === "true";
   await tick();
 
-  if (!runOnce) {
-    const intervalMs = RUNTIME.scanIntervalSeconds * 1_000;
-    console.log(`Bot running in loop mode. Interval=${RUNTIME.scanIntervalSeconds}s`);
-    setInterval(() => {
-      void tick();
-    }, intervalMs);
+  if (runOnce) {
+    if (startedStatusServer) {
+      await startedStatusServer.stop();
+    }
+    return;
   }
+
+  const intervalMs = RUNTIME.scanIntervalSeconds * 1_000;
+  console.log(`Bot running in loop mode. Interval=${RUNTIME.scanIntervalSeconds}s`);
+  setInterval(() => {
+    void tick();
+  }, intervalMs);
 }
 
 async function maybeTweet(

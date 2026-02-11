@@ -166,4 +166,44 @@ npm run dev
 6. Re-run preflight and confirm `vault.usdc_balance` is non-zero.
 7. Run one controlled armed cycle (no permanent `.env` edits needed):
    - `cd bot && npm run live-broadcast-once`
-9. Verify real transaction hash on Monadscan and in dashboard history.
+8. Verify real transaction hash on Monadscan and in dashboard history.
+
+## Vercel notes (important)
+
+- `Source: empty state` on Vercel usually means no bot state is mounted in the serverless runtime.
+- Run the bot in loop mode (`RUN_ONCE=false`) and enable the built-in status server:
+  - `BOT_STATUS_SERVER_ENABLED=true`
+  - optional strict mode: `BOT_STATUS_SERVER_REQUIRED=true` (bot exits if health port cannot bind)
+  - `BOT_STATUS_HOST=0.0.0.0`
+  - `BOT_STATUS_PORT=8787`
+  - optional hardening: `BOT_STATUS_AUTH_TOKEN=<secret>`
+- Bot endpoints:
+  - `/healthz` => liveness heartbeat (200 healthy, 503 stale/stuck)
+  - `/readyz` => readiness after first successful tick
+  - `/state` => `{ healthy, ready, runtime, state }` and returns 503 if unhealthy
+- For hosted UI + separate bot process, point Next to the bot status endpoint:
+  - `BOT_STATE_URL=https://<your-bot-domain>/state`
+  - if protected: `BOT_STATE_AUTH_TOKEN=<same secret as BOT_STATUS_AUTH_TOKEN>`
+- Next dashboard accepts remote state from `/state` only when `healthy=true` and `ready=true`.
+- `NEXT_PUBLIC_*` values (including `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`) are embedded at build time. After changing them in Vercel, you must redeploy.
+- WalletConnect can still fail if the project settings do not allow your deployed domain; confirm your Vercel domain is approved in WalletConnect Cloud.
+
+## Railway bot deploy
+
+Deploy the bot as a separate Railway service (Vercel should host UI only).
+
+1. Create a new Railway service from this repo and set **Root Directory** to `bot`.
+2. Keep `bot/railway.json` in place (Railway reads build/start/health settings from it).
+3. Configure bot env vars on Railway:
+   - required runtime: `MONAD_RPC_URL`, `MONAD_CHAIN_ID`, `VAULT_ADDRESS`, `CURVANCE_TARGET_ADAPTER_ADDRESS`, `BOT_EXECUTOR_PRIVATE_KEY`
+   - mode flags: `DRY_RUN=false`, `LIVE_MODE_ARMED=<true|false>`
+   - controls: `SCAN_INTERVAL_SECONDS`, `DEFAULT_TRADE_AMOUNT_RAW`, `TX_DEADLINE_SECONDS`
+   - status endpoints: `BOT_STATUS_SERVER_ENABLED=true`, `BOT_STATUS_SERVER_REQUIRED=true`, optional `BOT_STATUS_AUTH_TOKEN=<secret>`
+4. Deploy and verify:
+   - `https://<railway-domain>/healthz` => 200
+   - `https://<railway-domain>/readyz` => 200 (after first successful tick)
+   - `https://<railway-domain>/state` => includes `{ healthy: true, ready: true, runtime, state }`
+5. Point Vercel UI to Railway bot:
+   - `BOT_STATE_URL=https://<railway-domain>/state`
+   - if protected: `BOT_STATE_AUTH_TOKEN=<same secret>`
+6. Redeploy Vercel so dashboard uses live Railway bot state.

@@ -58,6 +58,12 @@ interface BotState {
   tweets: BotTweet[];
 }
 
+interface RemoteStatusEnvelope {
+  healthy?: unknown;
+  ready?: unknown;
+  state?: unknown;
+}
+
 const DEFAULT_STATE_PATH = join(process.cwd(), "bot", "data", "state.json");
 const CHAIN_CONFIG_PATH = join(
   process.cwd(),
@@ -142,16 +148,45 @@ export async function getDashboardData(): Promise<DashboardData> {
 }
 
 async function readBotState(): Promise<BotState> {
+  const remoteUrl =
+    process.env.BOT_STATE_URL?.trim() || process.env.BOT_STATE_JSON_URL?.trim() || "";
+  const remoteAuthToken = process.env.BOT_STATE_AUTH_TOKEN?.trim() || "";
+  if (remoteUrl) {
+    try {
+      const response = await fetch(remoteUrl, {
+        headers: remoteAuthToken
+          ? {
+              "x-bot-status-token": remoteAuthToken
+            }
+          : undefined,
+        cache: "no-store",
+        next: { revalidate: 0 }
+      });
+      if (response.ok) {
+        const parsed = (await response.json()) as unknown;
+        if (isRemoteStatusEnvelope(parsed)) {
+          if (parsed.healthy !== true || parsed.ready !== true) {
+            throw new Error("Remote bot endpoint is not healthy/ready.");
+          }
+          return toBotState(parsed.state);
+        }
+        return toBotState(parsed);
+      }
+    } catch {
+      // Treat unreachable remote state as empty.
+    }
+    return {
+      position: null,
+      snapshots: [],
+      decisions: [],
+      tweets: []
+    };
+  }
+
   const path = process.env.BOT_STATE_PATH?.trim() || DEFAULT_STATE_PATH;
   try {
     const raw = await readFile(path, "utf8");
-    const parsed = JSON.parse(raw) as Partial<BotState>;
-    return {
-      position: sanitizePosition(parsed.position),
-      snapshots: sanitizeSnapshots(parsed.snapshots),
-      decisions: sanitizeDecisions(parsed.decisions),
-      tweets: sanitizeTweets(parsed.tweets)
-    };
+    return toBotState(JSON.parse(raw) as unknown);
   } catch {
     return {
       position: null,
@@ -160,6 +195,35 @@ async function readBotState(): Promise<BotState> {
       tweets: []
     };
   }
+}
+
+function isRemoteStatusEnvelope(value: unknown): value is RemoteStatusEnvelope {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  return "healthy" in candidate || "ready" in candidate || "runtime" in candidate;
+}
+
+function toBotState(input: unknown): BotState {
+  if (!input || typeof input !== "object") {
+    return {
+      position: null,
+      snapshots: [],
+      decisions: [],
+      tweets: []
+    };
+  }
+
+  const parsed = input as Partial<BotState> & {
+    state?: Partial<BotState>;
+  };
+  const source = parsed.state && typeof parsed.state === "object" ? parsed.state : parsed;
+
+  return {
+    position: sanitizePosition(source.position),
+    snapshots: sanitizeSnapshots(source.snapshots),
+    decisions: sanitizeDecisions(source.decisions),
+    tweets: sanitizeTweets(source.tweets)
+  };
 }
 
 function sanitizePosition(input: unknown): BotPosition | null {
@@ -474,7 +538,7 @@ function buildPreviewTweet(
   const guardSummary = allGreen ? "GREEN" : hasRed ? "RED ALERT" : "YELLOW WATCH";
 
   const content = [
-    "STATUS UPDATE: Monad Yield Agent",
+    "STATUS UPDATE: Sentryield",
     "",
     `Position: ${currentPosition.pair} (${currentPosition.pool})`,
     `Net APY: ${currentPosition.netApy.toFixed(1)}%`,
