@@ -16,7 +16,21 @@ import type { PublicClient, TransactionReceipt, WalletClient } from "viem";
 const TREASURY_VAULT_ABI = parseAbi([
   "function enterPool((address target,address pool,address tokenIn,address lpToken,uint256 amountIn,uint256 minOut,uint256 deadline,bytes data,string pair,string protocol,uint16 netApyBps,uint32 intendedHoldSeconds) request) returns (uint256 lpReceived)",
   "function exitPool((address target,address pool,address lpToken,address tokenOut,uint256 amountIn,uint256 minOut,uint256 deadline,bytes data,string pair,string protocol) request) returns (uint256 amountOut)",
-  "function rotate(((address target,address pool,address lpToken,address tokenOut,uint256 amountIn,uint256 minOut,uint256 deadline,bytes data,string pair,string protocol) exitRequest,(address target,address pool,address tokenIn,address lpToken,uint256 amountIn,uint256 minOut,uint256 deadline,bytes data,string pair,string protocol,uint16 netApyBps,uint32 intendedHoldSeconds) enterRequest,uint16 oldNetApyBps,uint16 newNetApyBps,uint8 reasonCode) request) returns (uint256 amountOut,uint256 lpReceived)"
+  "function rotate(((address target,address pool,address lpToken,address tokenOut,uint256 amountIn,uint256 minOut,uint256 deadline,bytes data,string pair,string protocol) exitRequest,(address target,address pool,address tokenIn,address lpToken,uint256 amountIn,uint256 minOut,uint256 deadline,bytes data,string pair,string protocol,uint16 netApyBps,uint32 intendedHoldSeconds) enterRequest,uint16 oldNetApyBps,uint16 newNetApyBps,uint8 reasonCode) request) returns (uint256 amountOut,uint256 lpReceived)",
+  "error InvalidAmount()",
+  "error InvalidMinOut()",
+  "error TokenNotAllowlisted(address token)",
+  "error TargetNotAllowlisted(address target)",
+  "error PoolNotAllowlisted(address pool)",
+  "error DeadlineExpired(uint256 deadline)",
+  "error DeadlineTooFar(uint256 deadline,uint256 maxAllowed)",
+  "error MovementCapExceeded(address token,uint256 amount,uint256 cap)",
+  "error DailyMovementCapExceeded(uint256 usedBps,uint256 attemptedBps,uint256 capBps)",
+  "error InsufficientTokenBalance(address token,uint256 balance,uint256 requested)",
+  "error TokenMismatch(address expected,address actual)",
+  "error SlippageCheckFailed(uint256 actualOut,uint256 minOut)",
+  "error NotGuardianOrOwner()",
+  "error NativeTokenNotAccepted()"
 ]);
 
 const ERC20_BALANCE_ABI = parseAbi([

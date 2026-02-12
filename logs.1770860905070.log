@@ -1,0 +1,160 @@
+2026-02-12T01:02:35.830688501Z [inf]  [decision] ENTER | reasonCode=1 | No active position. Deploying capital to best Tier-S pool by net APY.
+2026-02-12T01:02:35.941631966Z [err]    args:               ({"target":"0xCD9F363C5B9BDAc667f5dfb6279698df83F11A98","pool":"0x21aDBb60a5fB909e7F1fB48aACC4569615CD97b5","tokenIn":"0x754704Bc059F8C67012fEd69BC8A327a5aafb603","lpToken":"0x21aDBb60a5fB909e7F1fB48aACC4569615CD97b5","amountIn":"1000000","minOut":"997000","deadline":"1770859954","data":"0x","pair":"USDC/MON","protocol":"Curvance","netApyBps":412,"intendedHoldSeconds":86400})
+2026-02-12T01:02:35.941637360Z [err]  [execution-error] SIMULATION_FAILED | Simulation failed for enterPool. | The contract function "enterPool" reverted with the following signature:
+2026-02-12T01:02:35.941644413Z [err]    sender:    0x350e83199F7FE3F57992461d6c3647CCEa36B5b0
+2026-02-12T01:02:35.941644958Z [err]  0xebd6ced9
+2026-02-12T01:02:35.941652429Z [err]  
+2026-02-12T01:02:35.941654492Z [err]  
+2026-02-12T01:02:35.941660763Z [err]  Unable to decode signature "0xebd6ced9" as it was not found on the provided ABI.
+2026-02-12T01:02:35.941662980Z [err]  Docs: https://viem.sh/docs/contract/decodeErrorResult
+2026-02-12T01:02:35.941668640Z [err]  Make sure you are using the correct ABI and that the error exists on it.
+2026-02-12T01:02:35.941671371Z [err]  Version: viem@2.45.2
+2026-02-12T01:02:35.941675616Z [err]  You can look up the decoded signature here: https://4byte.sourcify.dev/?q=0xebd6ced9.
+2026-02-12T01:02:35.941681296Z [err]   
+2026-02-12T01:02:35.941687185Z [err]  Contract Call:
+2026-02-12T01:02:35.941693533Z [err]    address:   0x1360a18651830021080209DCd8831fB3CF99D2f2
+2026-02-12T01:02:35.941701905Z [err]    function:  enterPool((address target, address pool, address tokenIn, address lpToken, uint256 amountIn, uint256 minOut, uint256 deadline, bytes data, string pair, string protocol, uint16 netApyBps, uint32 intendedHoldSeconds))
+2026-02-12T01:07:37.140866117Z [inf]  [decision] ENTER | reasonCode=1 | No active position. Deploying capital to best Tier-S pool by net APY.
+2026-02-12T01:07:37.140875653Z [err]    sender:    0x350e83199F7FE3F57992461d6c3647CCEa36B5b0
+2026-02-12T01:07:37.140877632Z [err]  [execution-error] SIMULATION_FAILED | Simulation failed for enterPool. | The contract function "enterPool" reverted with the following signature:
+2026-02-12T01:07:37.140885208Z [err]  0xebd6ced9
+2026-02-12T01:07:37.140891597Z [err]  
+2026-02-12T01:07:37.140897225Z [err]  
+2026-02-12T01:07:37.140909712Z [err]  Unable to decode signature "0xebd6ced9" as it was not found on the provided ABI.
+2026-02-12T01:07:37.140911838Z [err]  Docs: https://viem.sh/docs/contract/decodeErrorResult
+2026-02-12T01:07:37.140918673Z [err]  You can look up the decoded signature here: https://4byte.sourcify.dev/?q=0xebd6ced9.
+2026-02-12T01:07:37.140926006Z [err]  Make sure you are using the correct ABI and that the error exists on it.
+2026-02-12T01:07:37.140929124Z [err]  Version: viem@2.45.2
+2026-02-12T01:07:37.140931458Z [err]   
+2026-02-12T01:07:37.140942219Z [err]  Contract Call:
+2026-02-12T01:07:37.140948365Z [err]    address:   0x1360a18651830021080209DCd8831fB3CF99D2f2
+2026-02-12T01:07:37.140954484Z [err]    function:  enterPool((address target, address pool, address tokenIn, address lpToken, uint256 amountIn, uint256 minOut, uint256 deadline, bytes data, string pair, string protocol, uint16 netApyBps, uint32 intendedHoldSeconds))
+2026-02-12T01:07:37.140959728Z [err]    args:               ({"target":"0xCD9F363C5B9BDAc667f5dfb6279698df83F11A98","pool":"0x21aDBb60a5fB909e7F1fB48aACC4569615CD97b5","tokenIn":"0x754704Bc059F8C67012fEd69BC8A327a5aafb603","lpToken":"0x21aDBb60a5fB909e7F1fB48aACC4569615CD97b5","amountIn":"1000000","minOut":"997000","deadline":"1770860254","data":"0x","pair":"USDC/MON","protocol":"Curvance","netApyBps":412,"intendedHoldSeconds":86400})
+2026-02-12T01:12:37.295388139Z [err]  Unable to decode signature "0xebd6ced9" as it was not found on the provided ABI.
+2026-02-12T01:12:37.295394940Z [err]  Make sure you are using the correct ABI and that the error exists on it.
+2026-02-12T01:12:37.295399919Z [err]  You can look up the decoded signature here: https://4byte.sourcify.dev/?q=0xebd6ced9.
+2026-02-12T01:12:37.295404321Z [err]   
+2026-02-12T01:12:37.295429606Z [err]  Contract Call:
+2026-02-12T01:12:37.295435009Z [err]    address:   0x1360a18651830021080209DCd8831fB3CF99D2f2
+2026-02-12T01:12:37.295439721Z [err]    function:  enterPool((address target, address pool, address tokenIn, address lpToken, uint256 amountIn, uint256 minOut, uint256 deadline, bytes data, string pair, string protocol, uint16 netApyBps, uint32 intendedHoldSeconds))
+2026-02-12T01:12:37.295445687Z [err]    args:               ({"target":"0xCD9F363C5B9BDAc667f5dfb6279698df83F11A98","pool":"0x21aDBb60a5fB909e7F1fB48aACC4569615CD97b5","tokenIn":"0x754704Bc059F8C67012fEd69BC8A327a5aafb603","lpToken":"0x21aDBb60a5fB909e7F1fB48aACC4569615CD97b5","amountIn":"1000000","minOut":"997000","deadline":"1770860554","data":"0x","pair":"USDC/MON","protocol":"Curvance","netApyBps":412,"intendedHoldSeconds":86400})
+2026-02-12T01:12:37.295450660Z [err]    sender:    0x350e83199F7FE3F57992461d6c3647CCEa36B5b0
+2026-02-12T01:12:37.295460766Z [err]  
+2026-02-12T01:12:37.295466209Z [err]  Docs: https://viem.sh/docs/contract/decodeErrorResult
+2026-02-12T01:12:37.295471181Z [err]  Version: viem@2.45.2
+2026-02-12T01:12:37.295589192Z [inf]  [decision] ENTER | reasonCode=1 | No active position. Deploying capital to best Tier-S pool by net APY.
+2026-02-12T01:12:37.295593021Z [err]  [execution-error] SIMULATION_FAILED | Simulation failed for enterPool. | The contract function "enterPool" reverted with the following signature:
+2026-02-12T01:12:37.295596794Z [err]  0xebd6ced9
+2026-02-12T01:12:37.295600945Z [err]  
+2026-02-12T01:17:38.435314276Z [err]    args:               ({"target":"0xCD9F363C5B9BDAc667f5dfb6279698df83F11A98","pool":"0x21aDBb60a5fB909e7F1fB48aACC4569615CD97b5","tokenIn":"0x754704Bc059F8C67012fEd69BC8A327a5aafb603","lpToken":"0x21aDBb60a5fB909e7F1fB48aACC4569615CD97b5","amountIn":"1000000","minOut":"997000","deadline":"1770860854","data":"0x","pair":"USDC/MON","protocol":"Curvance","netApyBps":412,"intendedHoldSeconds":86400})
+2026-02-12T01:17:38.435323059Z [err]    sender:    0x350e83199F7FE3F57992461d6c3647CCEa36B5b0
+2026-02-12T01:17:38.435331551Z [err]  
+2026-02-12T01:17:38.435333986Z [inf]  [decision] ENTER | reasonCode=1 | No active position. Deploying capital to best Tier-S pool by net APY.
+2026-02-12T01:17:38.435337990Z [err]  Docs: https://viem.sh/docs/contract/decodeErrorResult
+2026-02-12T01:17:38.435340626Z [err]  [execution-error] SIMULATION_FAILED | Simulation failed for enterPool. | The contract function "enterPool" reverted with the following signature:
+2026-02-12T01:17:38.435344299Z [err]  Version: viem@2.45.2
+2026-02-12T01:17:38.435347003Z [err]  0xebd6ced9
+2026-02-12T01:17:38.435351343Z [err]  
+2026-02-12T01:17:38.435355853Z [err]  Unable to decode signature "0xebd6ced9" as it was not found on the provided ABI.
+2026-02-12T01:17:38.435360422Z [err]  Make sure you are using the correct ABI and that the error exists on it.
+2026-02-12T01:17:38.435364672Z [err]  You can look up the decoded signature here: https://4byte.sourcify.dev/?q=0xebd6ced9.
+2026-02-12T01:17:38.435369429Z [err]   
+2026-02-12T01:17:38.435373689Z [err]  Contract Call:
+2026-02-12T01:17:38.435378307Z [err]    address:   0x1360a18651830021080209DCd8831fB3CF99D2f2
+2026-02-12T01:17:38.435383062Z [err]    function:  enterPool((address target, address pool, address tokenIn, address lpToken, uint256 amountIn, uint256 minOut, uint256 deadline, bytes data, string pair, string protocol, uint16 netApyBps, uint32 intendedHoldSeconds))
+2026-02-12T01:22:38.874430150Z [err]    address:   0x1360a18651830021080209DCd8831fB3CF99D2f2
+2026-02-12T01:22:38.874437907Z [err]    function:  enterPool((address target, address pool, address tokenIn, address lpToken, uint256 amountIn, uint256 minOut, uint256 deadline, bytes data, string pair, string protocol, uint16 netApyBps, uint32 intendedHoldSeconds))
+2026-02-12T01:22:38.874444618Z [err]    args:               ({"target":"0xCD9F363C5B9BDAc667f5dfb6279698df83F11A98","pool":"0x21aDBb60a5fB909e7F1fB48aACC4569615CD97b5","tokenIn":"0x754704Bc059F8C67012fEd69BC8A327a5aafb603","lpToken":"0x21aDBb60a5fB909e7F1fB48aACC4569615CD97b5","amountIn":"1000000","minOut":"997000","deadline":"1770861154","data":"0x","pair":"USDC/MON","protocol":"Curvance","netApyBps":412,"intendedHoldSeconds":86400})
+2026-02-12T01:22:38.874449413Z [err]    sender:    0x350e83199F7FE3F57992461d6c3647CCEa36B5b0
+2026-02-12T01:22:38.874454964Z [err]  
+2026-02-12T01:22:38.874458526Z [inf]  [decision] ENTER | reasonCode=1 | No active position. Deploying capital to best Tier-S pool by net APY.
+2026-02-12T01:22:38.874461657Z [err]  Docs: https://viem.sh/docs/contract/decodeErrorResult
+2026-02-12T01:22:38.874468585Z [err]  [execution-error] SIMULATION_FAILED | Simulation failed for enterPool. | The contract function "enterPool" reverted with the following signature:
+2026-02-12T01:22:38.874468710Z [err]  Version: viem@2.45.2
+2026-02-12T01:22:38.874476523Z [err]  0xebd6ced9
+2026-02-12T01:22:38.874485905Z [err]  
+2026-02-12T01:22:38.874493795Z [err]  Unable to decode signature "0xebd6ced9" as it was not found on the provided ABI.
+2026-02-12T01:22:38.874500354Z [err]  Make sure you are using the correct ABI and that the error exists on it.
+2026-02-12T01:22:38.874507083Z [err]  You can look up the decoded signature here: https://4byte.sourcify.dev/?q=0xebd6ced9.
+2026-02-12T01:22:38.874514100Z [err]   
+2026-02-12T01:22:38.874522709Z [err]  Contract Call:
+2026-02-12T01:27:40.146177141Z [inf]  [decision] ENTER | reasonCode=1 | No active position. Deploying capital to best Tier-S pool by net APY.
+2026-02-12T01:27:40.146181531Z [err]  [execution-error] SIMULATION_FAILED | Simulation failed for enterPool. | The contract function "enterPool" reverted with the following signature:
+2026-02-12T01:27:40.146186041Z [err]  0xebd6ced9
+2026-02-12T01:27:40.146190122Z [err]  
+2026-02-12T01:27:40.146194356Z [err]  Unable to decode signature "0xebd6ced9" as it was not found on the provided ABI.
+2026-02-12T01:27:40.146198326Z [err]  Make sure you are using the correct ABI and that the error exists on it.
+2026-02-12T01:27:40.146203695Z [err]  You can look up the decoded signature here: https://4byte.sourcify.dev/?q=0xebd6ced9.
+2026-02-12T01:27:40.146207491Z [err]   
+2026-02-12T01:27:40.146211214Z [err]  Contract Call:
+2026-02-12T01:27:40.146214926Z [err]    address:   0x1360a18651830021080209DCd8831fB3CF99D2f2
+2026-02-12T01:27:40.146223429Z [err]    function:  enterPool((address target, address pool, address tokenIn, address lpToken, uint256 amountIn, uint256 minOut, uint256 deadline, bytes data, string pair, string protocol, uint16 netApyBps, uint32 intendedHoldSeconds))
+2026-02-12T01:27:40.146229105Z [err]    args:               ({"target":"0xCD9F363C5B9BDAc667f5dfb6279698df83F11A98","pool":"0x21aDBb60a5fB909e7F1fB48aACC4569615CD97b5","tokenIn":"0x754704Bc059F8C67012fEd69BC8A327a5aafb603","lpToken":"0x21aDBb60a5fB909e7F1fB48aACC4569615CD97b5","amountIn":"1000000","minOut":"997000","deadline":"1770861454","data":"0x","pair":"USDC/MON","protocol":"Curvance","netApyBps":412,"intendedHoldSeconds":86400})
+2026-02-12T01:27:40.146234319Z [err]    sender:    0x350e83199F7FE3F57992461d6c3647CCEa36B5b0
+2026-02-12T01:27:40.146242114Z [err]  
+2026-02-12T01:27:40.146247784Z [err]  Docs: https://viem.sh/docs/contract/decodeErrorResult
+2026-02-12T01:27:40.146253961Z [err]  Version: viem@2.45.2
+2026-02-12T01:32:40.451693338Z [err]  Make sure you are using the correct ABI and that the error exists on it.
+2026-02-12T01:32:40.451698589Z [err]    function:  enterPool((address target, address pool, address tokenIn, address lpToken, uint256 amountIn, uint256 minOut, uint256 deadline, bytes data, string pair, string protocol, uint16 netApyBps, uint32 intendedHoldSeconds))
+2026-02-12T01:32:40.451704969Z [err]    args:               ({"target":"0xCD9F363C5B9BDAc667f5dfb6279698df83F11A98","pool":"0x21aDBb60a5fB909e7F1fB48aACC4569615CD97b5","tokenIn":"0x754704Bc059F8C67012fEd69BC8A327a5aafb603","lpToken":"0x21aDBb60a5fB909e7F1fB48aACC4569615CD97b5","amountIn":"1000000","minOut":"997000","deadline":"1770861754","data":"0x","pair":"USDC/MON","protocol":"Curvance","netApyBps":412,"intendedHoldSeconds":86400})
+2026-02-12T01:32:40.451706061Z [err]  You can look up the decoded signature here: https://4byte.sourcify.dev/?q=0xebd6ced9.
+2026-02-12T01:32:40.451709817Z [err]    sender:    0x350e83199F7FE3F57992461d6c3647CCEa36B5b0
+2026-02-12T01:32:40.451716317Z [err]  
+2026-02-12T01:32:40.451717398Z [err]   
+2026-02-12T01:32:40.451724443Z [err]  Contract Call:
+2026-02-12T01:32:40.451730753Z [err]    address:   0x1360a18651830021080209DCd8831fB3CF99D2f2
+2026-02-12T01:32:40.451772892Z [inf]  [decision] ENTER | reasonCode=1 | No active position. Deploying capital to best Tier-S pool by net APY.
+2026-02-12T01:32:40.451780590Z [err]  Docs: https://viem.sh/docs/contract/decodeErrorResult
+2026-02-12T01:32:40.451783224Z [err]  [execution-error] SIMULATION_FAILED | Simulation failed for enterPool. | The contract function "enterPool" reverted with the following signature:
+2026-02-12T01:32:40.451790062Z [err]  0xebd6ced9
+2026-02-12T01:32:40.451801059Z [err]  Version: viem@2.45.2
+2026-02-12T01:32:40.451801231Z [err]  
+2026-02-12T01:32:40.451809156Z [err]  Unable to decode signature "0xebd6ced9" as it was not found on the provided ABI.
+2026-02-12T01:37:40.855627647Z [inf]  [decision] ENTER | reasonCode=1 | No active position. Deploying capital to best Tier-S pool by net APY.
+2026-02-12T01:37:40.855632710Z [err]  [execution-error] SIMULATION_FAILED | Simulation failed for enterPool. | The contract function "enterPool" reverted with the following signature:
+2026-02-12T01:37:40.855637490Z [err]  0xebd6ced9
+2026-02-12T01:37:40.855644551Z [err]  
+2026-02-12T01:37:40.855649993Z [err]  Unable to decode signature "0xebd6ced9" as it was not found on the provided ABI.
+2026-02-12T01:37:40.855655050Z [err]  Make sure you are using the correct ABI and that the error exists on it.
+2026-02-12T01:37:40.855662030Z [err]  You can look up the decoded signature here: https://4byte.sourcify.dev/?q=0xebd6ced9.
+2026-02-12T01:37:40.855666762Z [err]   
+2026-02-12T01:37:40.855671534Z [err]  Contract Call:
+2026-02-12T01:37:40.855676402Z [err]    address:   0x1360a18651830021080209DCd8831fB3CF99D2f2
+2026-02-12T01:37:40.855681815Z [err]    function:  enterPool((address target, address pool, address tokenIn, address lpToken, uint256 amountIn, uint256 minOut, uint256 deadline, bytes data, string pair, string protocol, uint16 netApyBps, uint32 intendedHoldSeconds))
+2026-02-12T01:37:40.855686801Z [err]    args:               ({"target":"0xCD9F363C5B9BDAc667f5dfb6279698df83F11A98","pool":"0x21aDBb60a5fB909e7F1fB48aACC4569615CD97b5","tokenIn":"0x754704Bc059F8C67012fEd69BC8A327a5aafb603","lpToken":"0x21aDBb60a5fB909e7F1fB48aACC4569615CD97b5","amountIn":"1000000","minOut":"997000","deadline":"1770862054","data":"0x","pair":"USDC/MON","protocol":"Curvance","netApyBps":412,"intendedHoldSeconds":86400})
+2026-02-12T01:37:40.855692036Z [err]    sender:    0x350e83199F7FE3F57992461d6c3647CCEa36B5b0
+2026-02-12T01:37:40.855696581Z [err]  
+2026-02-12T01:37:40.855701101Z [err]  Docs: https://viem.sh/docs/contract/decodeErrorResult
+2026-02-12T01:37:40.855706334Z [err]  Version: viem@2.45.2
+2026-02-12T01:42:42.073602048Z [err]  Contract Call:
+2026-02-12T01:42:42.073611481Z [err]    address:   0x1360a18651830021080209DCd8831fB3CF99D2f2
+2026-02-12T01:42:42.073617466Z [err]    function:  enterPool((address target, address pool, address tokenIn, address lpToken, uint256 amountIn, uint256 minOut, uint256 deadline, bytes data, string pair, string protocol, uint16 netApyBps, uint32 intendedHoldSeconds))
+2026-02-12T01:42:42.073618892Z [inf]  [decision] ENTER | reasonCode=1 | No active position. Deploying capital to best Tier-S pool by net APY.
+2026-02-12T01:42:42.073623156Z [err]    args:               ({"target":"0xCD9F363C5B9BDAc667f5dfb6279698df83F11A98","pool":"0x21aDBb60a5fB909e7F1fB48aACC4569615CD97b5","tokenIn":"0x754704Bc059F8C67012fEd69BC8A327a5aafb603","lpToken":"0x21aDBb60a5fB909e7F1fB48aACC4569615CD97b5","amountIn":"1000000","minOut":"997000","deadline":"1770862354","data":"0x","pair":"USDC/MON","protocol":"Curvance","netApyBps":412,"intendedHoldSeconds":86400})
+2026-02-12T01:42:42.073626893Z [err]  [execution-error] SIMULATION_FAILED | Simulation failed for enterPool. | The contract function "enterPool" reverted with the following signature:
+2026-02-12T01:42:42.073629195Z [err]    sender:    0x350e83199F7FE3F57992461d6c3647CCEa36B5b0
+2026-02-12T01:42:42.073633385Z [err]  0xebd6ced9
+2026-02-12T01:42:42.073635494Z [err]  
+2026-02-12T01:42:42.073641246Z [err]  
+2026-02-12T01:42:42.073641312Z [err]  Docs: https://viem.sh/docs/contract/decodeErrorResult
+2026-02-12T01:42:42.073646930Z [err]  Version: viem@2.45.2
+2026-02-12T01:42:42.073649269Z [err]  Unable to decode signature "0xebd6ced9" as it was not found on the provided ABI.
+2026-02-12T01:42:42.073655003Z [err]  Make sure you are using the correct ABI and that the error exists on it.
+2026-02-12T01:42:42.073660596Z [err]  You can look up the decoded signature here: https://4byte.sourcify.dev/?q=0xebd6ced9.
+2026-02-12T01:42:42.073666908Z [err]   
+2026-02-12T01:47:42.405027210Z [err]  Version: viem@2.45.2
+2026-02-12T01:47:42.405034583Z [inf]  [decision] ENTER | reasonCode=1 | No active position. Deploying capital to best Tier-S pool by net APY.
+2026-02-12T01:47:42.405040687Z [err]  [execution-error] SIMULATION_FAILED | Simulation failed for enterPool. | The contract function "enterPool" reverted with the following signature:
+2026-02-12T01:47:42.405046633Z [err]  0xa8f6c8d0
+2026-02-12T01:47:42.405052520Z [err]  
+2026-02-12T01:47:42.405059641Z [err]  Unable to decode signature "0xa8f6c8d0" as it was not found on the provided ABI.
+2026-02-12T01:47:42.405065375Z [err]  Make sure you are using the correct ABI and that the error exists on it.
+2026-02-12T01:47:42.405071154Z [err]  You can look up the decoded signature here: https://4byte.sourcify.dev/?q=0xa8f6c8d0.
+2026-02-12T01:47:42.405077266Z [err]   
+2026-02-12T01:47:42.405082542Z [err]  Contract Call:
+2026-02-12T01:47:42.405087685Z [err]    address:   0x1360a18651830021080209DCd8831fB3CF99D2f2
+2026-02-12T01:47:42.405091693Z [err]    function:  enterPool((address target, address pool, address tokenIn, address lpToken, uint256 amountIn, uint256 minOut, uint256 deadline, bytes data, string pair, string protocol, uint16 netApyBps, uint32 intendedHoldSeconds))
+2026-02-12T01:47:42.405095964Z [err]    args:               ({"target":"0xCD9F363C5B9BDAc667f5dfb6279698df83F11A98","pool":"0x21aDBb60a5fB909e7F1fB48aACC4569615CD97b5","tokenIn":"0x754704Bc059F8C67012fEd69BC8A327a5aafb603","lpToken":"0x21aDBb60a5fB909e7F1fB48aACC4569615CD97b5","amountIn":"1000000","minOut":"997000","deadline":"1770862654","data":"0x","pair":"USDC/MON","protocol":"Curvance","netApyBps":412,"intendedHoldSeconds":86400})
+2026-02-12T01:47:42.405100120Z [err]    sender:    0x350e83199F7FE3F57992461d6c3647CCEa36B5b0
+2026-02-12T01:47:42.405104934Z [err]  
+2026-02-12T01:47:42.405109983Z [err]  Docs: https://viem.sh/docs/contract/decodeErrorResult

@@ -91,13 +91,22 @@ export class CurvanceAdapter implements StrategyAdapter {
   }
 
   async buildEnterRequest(input: BuildEnterRequestInput): Promise<VaultEnterRequest> {
+    const quotedShares = await this.publicClient.readContract({
+      address: input.pool.pool,
+      abi: CURVANCE_CTOKEN_ABI,
+      functionName: "previewDeposit",
+      args: [input.amountIn]
+    });
+    const toleranceBps = this.deriveToleranceBps(input.amountIn, input.minOut);
+    const minOut = this.applyToleranceBps(quotedShares, toleranceBps);
+
     return {
       target: input.pool.target,
       pool: input.pool.pool,
       tokenIn: input.pool.tokenIn,
       lpToken: input.pool.lpToken,
       amountIn: input.amountIn,
-      minOut: input.minOut,
+      minOut,
       deadline: input.deadline,
       data: "0x",
       pair: input.pool.pair,
@@ -108,17 +117,40 @@ export class CurvanceAdapter implements StrategyAdapter {
   }
 
   async buildExitRequest(input: BuildExitRequestInput): Promise<VaultExitRequest> {
+    const quotedAssets = await this.publicClient.readContract({
+      address: input.pool.pool,
+      abi: CURVANCE_CTOKEN_ABI,
+      functionName: "previewRedeem",
+      args: [input.amountIn]
+    });
+    const toleranceBps = this.deriveToleranceBps(input.amountIn, input.minOut);
+    const minOut = this.applyToleranceBps(quotedAssets, toleranceBps);
+
     return {
       target: input.pool.target,
       pool: input.pool.pool,
       lpToken: input.pool.lpToken,
       tokenOut: input.tokenOut,
       amountIn: input.amountIn,
-      minOut: input.minOut,
+      minOut,
       deadline: input.deadline,
       data: "0x",
       pair: input.pool.pair,
       protocol: input.pool.protocol
     };
+  }
+
+  private deriveToleranceBps(amountIn: bigint, requestedMinOut: bigint): number {
+    if (amountIn <= 0n) return 10_000;
+    const clamped = requestedMinOut >= amountIn ? 10_000n : (requestedMinOut * 10_000n) / amountIn;
+    const value = Number(clamped);
+    if (!Number.isFinite(value)) return 10_000;
+    return Math.max(1, Math.min(10_000, Math.floor(value)));
+  }
+
+  private applyToleranceBps(quotedOut: bigint, toleranceBps: number): bigint {
+    if (quotedOut <= 0n) return 1n;
+    const minOut = (quotedOut * BigInt(toleranceBps)) / 10_000n;
+    return minOut > 0n ? minOut : 1n;
   }
 }
