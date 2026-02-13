@@ -219,7 +219,7 @@ npm run migration:report
    - switch to Monad chain
    - use **Deposit USDC To Vault** card
    - if prompted, approve USDC then confirm deposit
-   - for wallet withdrawal: first trigger **Exit to USDC** in controls, wait until vault is parked, then use **Withdraw To Wallet**
+   - if LP is active, UI now auto-queues **Exit to USDC** and continues deposit/withdraw when parked
 5. Optional clean-cycle reset (backs up old state first):
    - `cd bot && npm run reset-state`
 6. Re-run preflight and confirm `vault.usdc_balance` is non-zero.
@@ -233,6 +233,7 @@ npm run migration:report
 - If you are on an older vault deployment, redeploy vault + update `VAULT_ADDRESS` before using wallet withdrawals.
 - Legacy vaults still support direct transfer deposits, but redeem-to-wallet is unavailable until upgrade.
 - Full blue/green migration guide: `docs/migration-playbook.md`.
+- V3 design for true anytime liquidity UX: `docs/vault-v3-anytime-liquidity.md`.
 
 ## Vercel notes (important)
 

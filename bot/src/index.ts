@@ -261,6 +261,20 @@ async function main(): Promise<void> {
       }
 
       await db.setPosition(execution.updatedPosition);
+      if (
+        execution.action === "EXIT_TO_USDC" &&
+        execution.updatedPosition?.poolId &&
+        startedStatusServer
+      ) {
+        startedStatusServer.queueAction({
+          type: "EXIT_TO_USDC",
+          requestedAt: nowIso(),
+          requestedBy: "auto_continue_partial_exit"
+        });
+        console.log(
+          `[controls] partial exit detected for ${execution.updatedPosition.poolId}; queued follow-up EXIT_TO_USDC.`
+        );
+      }
       const tweet = await maybeTweet(tweeter, execution, {
         reason: decision.reason,
         previousPair: stateBefore.position?.pair ?? "unknown",
@@ -499,7 +513,7 @@ async function maybeTweet(
     return tweet;
   }
 
-  if (execution.action === "EXIT_TO_USDC") {
+  if (execution.action === "EXIT_TO_USDC" && !execution.updatedPosition?.poolId) {
     const tweet = await tweeter.tweetEmergencyExit(context.reason, txHash);
     console.log("[tweet]", tweet.body);
     return tweet;

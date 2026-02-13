@@ -230,7 +230,18 @@ export class ExecutorService {
 
     const fromPool = this.mustGetPool(input.position.poolId);
     const fromAdapter = this.mustGetAdapter(fromPool.adapterId);
-    const amountIn = this.positionAmount(input.position);
+    const requestedAmountIn = this.positionAmount(input.position);
+    const amountIn = await this.resolveCappedAmount(fromPool.lpToken, requestedAmountIn);
+    if (amountIn <= 0n) {
+      return this.failed(
+        "EXIT_TO_USDC",
+        {
+          code: "POLICY_BLOCKED",
+          message: "Exit blocked: no deployable LP balance available under movement caps."
+        },
+        input.position
+      );
+    }
     const deadline = BigInt(input.nowTs + this.config.txDeadlineSeconds);
 
     const exitRequest = await fromAdapter.buildExitRequest({
@@ -247,6 +258,23 @@ export class ExecutorService {
     });
     if (result.error || !result.txHash) {
       return this.failed("EXIT_TO_USDC", result.error, input.position);
+    }
+
+    const remainingLpBalance = await this.readVaultTokenBalance(fromPool.lpToken);
+    if (remainingLpBalance > 0n) {
+      return {
+        action: "EXIT_TO_USDC",
+        txHashes: [result.txHash],
+        updatedPosition: {
+          poolId: fromPool.id,
+          pair: fromPool.pair,
+          protocol: fromPool.protocol,
+          enteredAt: input.position.enteredAt,
+          lpBalance: remainingLpBalance.toString(),
+          lastNetApyBps: input.position.lastNetApyBps,
+          parkedToken: null
+        }
+      };
     }
 
     return {
@@ -472,14 +500,18 @@ export class ExecutorService {
   }
 
   private async resolveEnterAmount(tokenIn: Address): Promise<bigint> {
-    const balance = await this.readVaultTokenBalance(tokenIn);
+    return this.resolveCappedAmount(tokenIn, this.config.defaultTradeAmountRaw);
+  }
+
+  private async resolveCappedAmount(token: Address, requestedAmount: bigint): Promise<bigint> {
+    const balance = await this.readVaultTokenBalance(token);
     if (balance <= 0n) return 0n;
 
     const movementCapBps = await this.readVaultMovementCapBps();
     const movementCapAmount = (balance * BigInt(movementCapBps)) / 10_000n;
     const allowedByRails = movementCapAmount > 0n ? movementCapAmount : balance;
 
-    const desired = this.config.defaultTradeAmountRaw;
+    const desired = requestedAmount > 0n ? requestedAmount : balance;
     const amount = desired < allowedByRails ? desired : allowedByRails;
     return amount <= balance ? amount : balance;
   }
