@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDownToLine, ExternalLink, Loader2 } from "lucide-react";
 import { erc20Abi, formatUnits, isAddress, parseAbi, parseUnits } from "viem";
 import {
@@ -29,7 +29,13 @@ const TREASURY_VAULT_USER_ABI = parseAbi([
   "function withdrawToWallet(uint256 amountOut,address receiver) returns (uint256 sharesBurned)",
   "function userShares(address account) view returns (uint256)",
   "function maxWithdrawToWallet(address account) view returns (uint256)",
-  "function hasOpenLpPosition() view returns (bool)"
+  "function hasOpenLpPosition() view returns (bool)",
+  "error ZeroAddress()",
+  "error InvalidAmount()",
+  "error TokenNotAllowlisted(address token)",
+  "error PositionStillActive()",
+  "error InsufficientShares(uint256 balance,uint256 requested)",
+  "error VaultHasUnaccountedAssets(uint256 currentBalance)"
 ]);
 
 function trimAmount(raw: string): string {
@@ -63,6 +69,7 @@ export function DepositUsdcCard({
   } = useWriteContract();
   const { isLoading: isConfirming, isSuccess: isConfirmed, error: receiptError } =
     useWaitForTransactionReceipt({ hash: txHash });
+  const handledReceiptHashRef = useRef<string | null>(null);
 
   const tokenAddress = useMemo(() => {
     return isAddress(usdcTokenAddress)
@@ -73,7 +80,7 @@ export function DepositUsdcCard({
     return isAddress(vaultAddress) ? (vaultAddress as `0x${string}`) : null;
   }, [vaultAddress]);
 
-  const { data: walletUsdcBalance } = useReadContract({
+  const { data: walletUsdcBalance, refetch: refetchWalletBalance } = useReadContract({
     abi: erc20Abi,
     address: tokenAddress ?? undefined,
     functionName: "balanceOf",
@@ -84,7 +91,7 @@ export function DepositUsdcCard({
     }
   });
 
-  const { data: allowanceRaw } = useReadContract({
+  const { data: allowanceRaw, refetch: refetchAllowance } = useReadContract({
     abi: erc20Abi,
     address: tokenAddress ?? undefined,
     functionName: "allowance",
@@ -97,7 +104,8 @@ export function DepositUsdcCard({
 
   const {
     data: userSharesRaw,
-    error: userSharesError
+    error: userSharesError,
+    refetch: refetchUserShares
   } = useReadContract({
     abi: TREASURY_VAULT_USER_ABI,
     address: destinationAddress ?? undefined,
@@ -111,7 +119,8 @@ export function DepositUsdcCard({
 
   const {
     data: maxWithdrawRaw,
-    error: maxWithdrawError
+    error: maxWithdrawError,
+    refetch: refetchMaxWithdraw
   } = useReadContract({
     abi: TREASURY_VAULT_USER_ABI,
     address: destinationAddress ?? undefined,
@@ -125,7 +134,8 @@ export function DepositUsdcCard({
 
   const {
     data: hasOpenLpPositionRaw,
-    error: hasOpenLpPositionError
+    error: hasOpenLpPositionError,
+    refetch: refetchHasOpenLpPosition
   } = useReadContract({
     abi: TREASURY_VAULT_USER_ABI,
     address: destinationAddress ?? undefined,
@@ -171,6 +181,26 @@ export function DepositUsdcCard({
   const txUrl = txHash ? `${explorerTxBaseUrl}${txHash}` : null;
   const isBusy = isWriting || isConfirming || isSwitching;
 
+  useEffect(() => {
+    if (!txHash || !isConfirmed) return;
+    if (handledReceiptHashRef.current === txHash) return;
+    handledReceiptHashRef.current = txHash;
+
+    void refetchAllowance();
+    void refetchWalletBalance();
+    void refetchUserShares();
+    void refetchMaxWithdraw();
+    void refetchHasOpenLpPosition();
+  }, [
+    isConfirmed,
+    txHash,
+    refetchAllowance,
+    refetchWalletBalance,
+    refetchUserShares,
+    refetchMaxWithdraw,
+    refetchHasOpenLpPosition
+  ]);
+
   const onDeposit = () => {
     setLocalError(null);
     if (!isConnected) {
@@ -207,6 +237,13 @@ export function DepositUsdcCard({
     }
 
     if (isVaultUserFlowAvailable) {
+      if (hasOpenLpPosition) {
+        setLocalError(
+          "Vault currently has an active LP position. Use Exit to USDC first, then deposit."
+        );
+        return;
+      }
+
       if (needsApproval) {
         setPendingAction("approve");
         writeContract({
@@ -364,7 +401,7 @@ export function DepositUsdcCard({
         <Button
           className="w-full"
           onClick={onDeposit}
-          disabled={isBusy || !isConnected}
+          disabled={isBusy || !isConnected || (isVaultUserFlowAvailable && hasOpenLpPosition)}
         >
           {isWrongNetwork
             ? "Switch To Monad"
@@ -372,11 +409,19 @@ export function DepositUsdcCard({
               ? "Confirm In Wallet..."
               : isConfirming
                 ? "Waiting For Confirmation..."
+                : isVaultUserFlowAvailable && hasOpenLpPosition
+                  ? "Exit To USDC First"
                 : isVaultUserFlowAvailable && needsApproval
                   ? "Approve USDC"
                   : "Deposit USDC"}
           {isBusy ? <Loader2 className="ml-2 h-4 w-4 animate-spin" /> : null}
         </Button>
+
+        {isVaultUserFlowAvailable && hasOpenLpPosition ? (
+          <p className="text-xs text-warning">
+            Deposits are paused while capital is deployed in LP. Exit to USDC, then retry deposit.
+          </p>
+        ) : null}
 
         {isVaultUserFlowAvailable ? (
           <div className="space-y-2 rounded-lg border border-border p-3">
