@@ -48,11 +48,29 @@ const TREASURY_VAULT_USER_ABI = parseAbi([
   "function hasOpenLpPosition() view returns (bool)",
   "function supportsAnytimeLiquidity() view returns (bool)",
   "error ZeroAddress()",
+  "error InvalidBps(uint256 value)",
+  "error InvalidDeadlineDelay(uint256 value)",
   "error InvalidAmount()",
+  "error InvalidMinOut()",
   "error TokenNotAllowlisted(address token)",
+  "error TargetNotAllowlisted(address target)",
+  "error PoolNotAllowlisted(address pool)",
+  "error DeadlineExpired(uint256 deadline)",
+  "error DeadlineTooFar(uint256 deadline,uint256 maxAllowed)",
+  "error MovementCapExceeded(address token,uint256 amount,uint256 cap)",
+  "error DailyMovementCapExceeded(uint256 usedBps,uint256 attemptedBps,uint256 capBps)",
+  "error InsufficientTokenBalance(address token,uint256 balance,uint256 requested)",
+  "error TokenMismatch(address expected,address actual)",
+  "error SlippageCheckFailed(uint256 actualOut,uint256 minOut)",
+  "error NotGuardianOrOwner()",
+  "error NativeTokenNotAccepted()",
   "error PositionStillActive()",
   "error InsufficientShares(uint256 balance,uint256 requested)",
-  "error VaultHasUnaccountedAssets(uint256 currentBalance)"
+  "error VaultHasUnaccountedAssets(uint256 currentBalance)",
+  "error UnsupportedPoolAsset(address pool,address expected,address actual)",
+  "error MissingLpRoute(address lpToken)",
+  "error UnsupportedPoolPreview(address pool)",
+  "error InsufficientLiquidityForWithdraw(uint256 available,uint256 requested)"
 ]);
 
 function trimAmount(raw: string): string {
