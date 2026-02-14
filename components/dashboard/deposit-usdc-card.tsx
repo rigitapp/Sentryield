@@ -40,6 +40,19 @@ type PendingDepositIntent =
     }
   | null;
 
+type WithdrawDiagnosticResponse =
+  | {
+      ok: true;
+    }
+  | {
+      ok: false;
+      errorName?: string;
+      message: string;
+    }
+  | {
+      error: string;
+    };
+
 const TREASURY_VAULT_USER_ABI = parseAbi([
   "function depositUsdc(uint256 amountIn) returns (uint256 sharesOut)",
   "function withdrawToWallet(uint256 amountOut,address receiver) returns (uint256 sharesBurned)",
@@ -94,6 +107,7 @@ export function DepositUsdcCard({
   const [pendingAutomation, setPendingAutomation] = useState<PendingAutomation>(null);
   const [pendingDepositIntent, setPendingDepositIntent] = useState<PendingDepositIntent>(null);
   const [isQueueingExit, setIsQueueingExit] = useState(false);
+  const [isDiagnosingWithdraw, setIsDiagnosingWithdraw] = useState(false);
   const [automationInfo, setAutomationInfo] = useState<string | null>(null);
   const [resumeQueuedDepositAfterApprove, setResumeQueuedDepositAfterApprove] =
     useState<string | null>(null);
@@ -231,7 +245,7 @@ export function DepositUsdcCard({
   );
 
   const txUrl = txHash ? `${explorerTxBaseUrl}${txHash}` : null;
-  const isBusy = isWriting || isConfirming || isSwitching || isQueueingExit;
+  const isBusy = isWriting || isConfirming || isSwitching || isQueueingExit || isDiagnosingWithdraw;
 
   useEffect(() => {
     if (!txHash || !isConfirmed) return;
@@ -610,15 +624,54 @@ export function DepositUsdcCard({
       return;
     }
 
-    setPendingAction("withdraw");
-    writeContract({
-      abi: TREASURY_VAULT_USER_ABI,
-      address: destinationAddress,
-      functionName: "withdrawToWallet",
-      args: [amountRaw, address],
-      chainId
-    });
-    setLastSubmittedWithdrawAmount(withdrawAmount);
+    const diagnoseAndSubmit = async () => {
+      if (!address || !destinationAddress) return;
+      setIsDiagnosingWithdraw(true);
+      try {
+        const response = await fetch("/api/withdraw-diagnostics", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            vaultAddress: destinationAddress,
+            account: address,
+            receiver: address,
+            amountRaw: amountRaw.toString()
+          })
+        });
+        const payload = (await response.json().catch(() => ({}))) as WithdrawDiagnosticResponse;
+        if (!response.ok) {
+          const message =
+            "error" in payload && typeof payload.error === "string"
+              ? payload.error
+              : "Withdraw precheck failed.";
+          setLocalError(message);
+          return;
+        }
+        if ("ok" in payload && payload.ok === false) {
+          setLocalError(payload.message || "Withdraw simulation failed.");
+          return;
+        }
+      } catch {
+        setLocalError("Withdraw precheck request failed.");
+        return;
+      } finally {
+        setIsDiagnosingWithdraw(false);
+      }
+
+      setPendingAction("withdraw");
+      writeContract({
+        abi: TREASURY_VAULT_USER_ABI,
+        address: destinationAddress,
+        functionName: "withdrawToWallet",
+        args: [amountRaw, address],
+        chainId
+      });
+      setLastSubmittedWithdrawAmount(withdrawAmount);
+    };
+
+    void diagnoseAndSubmit();
   };
 
   return (
@@ -747,7 +800,9 @@ export function DepositUsdcCard({
                 (!hasOpenLpPosition && maxWithdrawValue <= 0n)
               }
             >
-              {hasOpenLpPosition && !supportsAnytimeLiquidity
+              {isDiagnosingWithdraw
+                ? "Checking Withdraw..."
+                : hasOpenLpPosition && !supportsAnytimeLiquidity
                 ? "Auto Exit + Withdraw"
                 : "Withdraw To Wallet"}
             </Button>
