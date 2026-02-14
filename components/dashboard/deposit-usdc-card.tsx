@@ -46,6 +46,7 @@ const TREASURY_VAULT_USER_ABI = parseAbi([
   "function userShares(address account) view returns (uint256)",
   "function maxWithdrawToWallet(address account) view returns (uint256)",
   "function hasOpenLpPosition() view returns (bool)",
+  "function supportsAnytimeLiquidity() view returns (bool)",
   "error ZeroAddress()",
   "error InvalidAmount()",
   "error TokenNotAllowlisted(address token)",
@@ -168,6 +169,15 @@ export function DepositUsdcCard({
       enabled: Boolean(destinationAddress)
     }
   });
+  const { data: supportsAnytimeLiquidityRaw } = useReadContract({
+    abi: TREASURY_VAULT_USER_ABI,
+    address: destinationAddress ?? undefined,
+    functionName: "supportsAnytimeLiquidity",
+    chainId,
+    query: {
+      enabled: Boolean(destinationAddress)
+    }
+  });
 
   const isVaultUserFlowAvailable =
     Boolean(destinationAddress) &&
@@ -179,6 +189,7 @@ export function DepositUsdcCard({
   const userSharesValue = typeof userSharesRaw === "bigint" ? userSharesRaw : 0n;
   const maxWithdrawValue = typeof maxWithdrawRaw === "bigint" ? maxWithdrawRaw : 0n;
   const hasOpenLpPosition = hasOpenLpPositionRaw === true;
+  const supportsAnytimeLiquidity = supportsAnytimeLiquidityRaw === true;
 
   const balanceText =
     walletBalanceValue !== null ? formatUnits(walletBalanceValue, usdcDecimals) : null;
@@ -488,7 +499,7 @@ export function DepositUsdcCard({
     }
 
     if (isVaultUserFlowAvailable) {
-      if (hasOpenLpPosition) {
+      if (hasOpenLpPosition && !supportsAnytimeLiquidity) {
         setPendingDepositIntent({
           amount: depositAmount,
           queuedAtMs: Date.now()
@@ -572,7 +583,7 @@ export function DepositUsdcCard({
       setLocalError("Withdraw amount must be greater than zero.");
       return;
     }
-    if (hasOpenLpPosition) {
+    if (hasOpenLpPosition && !supportsAnytimeLiquidity) {
       void queueExitForAutomation(withdrawAmount);
       return;
     }
@@ -609,8 +620,9 @@ export function DepositUsdcCard({
         <p className="break-all text-xs text-muted-foreground">Vault: {vaultAddress}</p>
         <p className="break-all text-xs text-muted-foreground">USDC: {usdcTokenAddress}</p>
         <p className="rounded-md bg-secondary/50 p-2 text-xs text-muted-foreground">
-          Heads-up: there is no mandatory 24h hold timer. Wallet withdrawals are available whenever
-          funds are parked in USDC; if capital is deployed, use Exit to park first.
+          {supportsAnytimeLiquidity
+            ? "Heads-up: anytime liquidity is enabled. Deposits and wallet withdrawals can run while LP is active; the vault auto-unwinds liquidity as needed under configured rails."
+            : "Heads-up: there is no mandatory 24h hold timer. Wallet withdrawals are available whenever funds are parked in USDC; if capital is deployed, use Exit to park first."}
         </p>
 
         {isVaultUserFlowAvailable ? (
@@ -618,7 +630,12 @@ export function DepositUsdcCard({
             <p>Your vault shares: {sharesText}</p>
             <p>Withdrawable now: {maxWithdrawText} USDC</p>
             <p>
-              Vault state: {hasOpenLpPosition ? "active LP position (withdraw locked)" : "parked in USDC"}
+              Vault state:{" "}
+              {hasOpenLpPosition
+                ? supportsAnytimeLiquidity
+                  ? "active LP position (anytime liquidity enabled)"
+                  : "active LP position (legacy flow)"
+                : "parked in USDC"}
             </p>
           </div>
         ) : (
@@ -666,7 +683,7 @@ export function DepositUsdcCard({
               ? "Confirm In Wallet..."
               : isConfirming
                 ? "Waiting For Confirmation..."
-                : isVaultUserFlowAvailable && hasOpenLpPosition
+                : isVaultUserFlowAvailable && hasOpenLpPosition && !supportsAnytimeLiquidity
                   ? "Queue Deposit Request"
                 : isVaultUserFlowAvailable && needsApproval
                   ? "Approve USDC"
@@ -674,7 +691,7 @@ export function DepositUsdcCard({
           {isBusy ? <Loader2 className="ml-2 h-4 w-4 animate-spin" /> : null}
         </Button>
 
-        {isVaultUserFlowAvailable && hasOpenLpPosition ? (
+        {isVaultUserFlowAvailable && hasOpenLpPosition && !supportsAnytimeLiquidity ? (
           <p className="text-xs text-muted-foreground">
             Active LP detected. Deposit requests are queued and execute when vault liquidity is
             parked in USDC.
@@ -712,7 +729,9 @@ export function DepositUsdcCard({
                 (!hasOpenLpPosition && maxWithdrawValue <= 0n)
               }
             >
-              {hasOpenLpPosition ? "Auto Exit + Withdraw" : "Withdraw To Wallet"}
+              {hasOpenLpPosition && !supportsAnytimeLiquidity
+                ? "Auto Exit + Withdraw"
+                : "Withdraw To Wallet"}
             </Button>
           </div>
         ) : null}

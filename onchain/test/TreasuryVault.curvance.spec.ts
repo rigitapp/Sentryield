@@ -138,7 +138,7 @@ describe("TreasuryVault + CurvanceTargetAdapter", function () {
 
   describe("A) Vault safety rails", function () {
     it("reverts on disallowed token", async function () {
-      const { vault, executor, adapter, pool1, rogue } = await loadFixture(fixture);
+      const { vault, executor, adapter, pool1, rogue, usdc } = await loadFixture(fixture);
       const request = await makeEnterRequest({
         target: await adapter.getAddress(),
         pool: await pool1.getAddress(),
@@ -148,8 +148,8 @@ describe("TreasuryVault + CurvanceTargetAdapter", function () {
       });
 
       await expect(vault.connect(executor).enterPool(request))
-        .to.be.revertedWithCustomError(vault, "TokenNotAllowlisted")
-        .withArgs(await rogue.getAddress());
+        .to.be.revertedWithCustomError(vault, "TokenMismatch")
+        .withArgs(await usdc.getAddress(), await rogue.getAddress());
     });
 
     it("reverts on disallowed target", async function () {
@@ -516,11 +516,17 @@ describe("TreasuryVault + CurvanceTargetAdapter", function () {
       );
     });
 
-    it("blocks deposits and withdrawals while a live LP position is open", async function () {
+    it("allows deposit + withdraw while LP is active (NAV accounting + auto unwind)", async function () {
       const { depositor, executor, usdc, pool, adapter, vault } = await loadFixture(userFlowFixture);
-      const depositAmount = 200_000n * ONE_USDC;
-      await usdc.connect(depositor).approve(await vault.getAddress(), depositAmount);
-      await vault.connect(depositor).depositUsdc(depositAmount);
+      const initialDeposit = 200_000n * ONE_USDC;
+      const secondDeposit = 10_000n * ONE_USDC;
+      const withdrawAmount = 80_000n * ONE_USDC;
+
+      await usdc
+        .connect(depositor)
+        .approve(await vault.getAddress(), initialDeposit + secondDeposit + withdrawAmount);
+      await vault.connect(depositor).depositUsdc(initialDeposit);
+      expect(await vault.supportsAnytimeLiquidity()).to.equal(true);
 
       const enterRequest = await makeEnterRequest({
         target: await adapter.getAddress(),
@@ -531,12 +537,22 @@ describe("TreasuryVault + CurvanceTargetAdapter", function () {
       });
       await vault.connect(executor).enterPool(enterRequest);
       expect(await vault.hasOpenLpPosition()).to.equal(true);
+      expect(await vault.maxWithdrawToWallet(depositor.address)).to.equal(initialDeposit);
 
-      await usdc.connect(depositor).approve(await vault.getAddress(), ONE_USDC);
-      await expect(vault.connect(depositor).depositUsdc(ONE_USDC))
-        .to.be.revertedWithCustomError(vault, "PositionStillActive");
-      await expect(vault.connect(depositor).withdrawToWallet(ONE_USDC, depositor.address))
-        .to.be.revertedWithCustomError(vault, "PositionStillActive");
+      await expect(vault.connect(depositor).depositUsdc(secondDeposit))
+        .to.emit(vault, "UserDeposited")
+        .withArgs(depositor.address, secondDeposit, secondDeposit, anyValue);
+
+      const lpBalanceBefore = await pool.balanceOf(await vault.getAddress());
+      await expect(vault.connect(depositor).withdrawToWallet(withdrawAmount, depositor.address))
+        .to.emit(vault, "UserWithdrawn")
+        .withArgs(depositor.address, depositor.address, withdrawAmount, withdrawAmount, anyValue);
+      const lpBalanceAfter = await pool.balanceOf(await vault.getAddress());
+      expect(lpBalanceAfter).to.be.lessThan(lpBalanceBefore);
+
+      expect(await usdc.balanceOf(depositor.address)).to.equal(
+        1_000_000n * ONE_USDC - initialDeposit - secondDeposit + withdrawAmount
+      );
     });
 
     it("rejects first user deposit when vault already has unaccounted USDC", async function () {

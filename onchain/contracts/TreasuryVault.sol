@@ -8,6 +8,12 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ITargetAdapter} from "./interfaces/ITargetAdapter.sol";
 
+interface ILpValuationPool {
+    function asset() external view returns (address);
+
+    function previewRedeem(uint256 shares) external view returns (uint256 assetsOut);
+}
+
 contract TreasuryVault is AccessControl, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -33,6 +39,13 @@ contract TreasuryVault is AccessControl, Pausable, ReentrancyGuard {
     mapping(address => uint256) public userShares;
     mapping(address => bool) private trackedLpTokens;
     address[] private trackedLpTokenList;
+
+    struct LpRoute {
+        address target;
+        address pool;
+    }
+
+    mapping(address => LpRoute) public lpRoutes;
 
     struct EnterRequest {
         address target;
@@ -116,6 +129,8 @@ contract TreasuryVault is AccessControl, Pausable, ReentrancyGuard {
     event UserWithdrawn(
         address indexed user, address indexed receiver, uint256 amountOut, uint256 sharesBurned, uint256 timestamp
     );
+    event LpRouteTracked(address indexed lpToken, address indexed target, address indexed pool);
+    event UserWithdrawLiquidityUnwound(address indexed lpToken, uint256 lpBurned, uint256 amountOut, uint256 timestamp);
 
     error ZeroAddress();
     error InvalidBps(uint256 value);
@@ -137,6 +152,10 @@ contract TreasuryVault is AccessControl, Pausable, ReentrancyGuard {
     error PositionStillActive();
     error InsufficientShares(uint256 balance, uint256 requested);
     error VaultHasUnaccountedAssets(uint256 currentBalance);
+    error UnsupportedPoolAsset(address pool, address expected, address actual);
+    error MissingLpRoute(address lpToken);
+    error UnsupportedPoolPreview(address pool);
+    error InsufficientLiquidityForWithdraw(uint256 available, uint256 requested);
 
     constructor(
         address owner_,
@@ -257,16 +276,46 @@ contract TreasuryVault is AccessControl, Pausable, ReentrancyGuard {
         return false;
     }
 
+    function supportsAnytimeLiquidity() external pure returns (bool) {
+        return true;
+    }
+
+    function totalAssets() public view returns (uint256 assetsOut) {
+        assetsOut = IERC20(depositToken).balanceOf(address(this));
+        for (uint256 i = 0; i < trackedLpTokenList.length; i++) {
+            address lpToken = trackedLpTokenList[i];
+            uint256 lpBalance = IERC20(lpToken).balanceOf(address(this));
+            if (lpBalance == 0) continue;
+            assetsOut += _previewRedeemAssets(lpToken, lpBalance);
+        }
+    }
+
+    function convertToShares(uint256 assetsIn) public view returns (uint256 sharesOut) {
+        if (assetsIn == 0) return 0;
+        uint256 totalShares = totalUserShares;
+        if (totalShares == 0) return assetsIn;
+
+        uint256 assets = totalAssets();
+        if (assets == 0) return 0;
+        sharesOut = (assetsIn * totalShares) / assets;
+    }
+
+    function convertToAssets(uint256 sharesIn) public view returns (uint256 assetsOut) {
+        if (sharesIn == 0) return 0;
+        uint256 totalShares = totalUserShares;
+        if (totalShares == 0) return 0;
+        assetsOut = (sharesIn * totalAssets()) / totalShares;
+    }
+
     function maxWithdrawToWallet(address account) public view returns (uint256 assetsOut) {
         uint256 shares = userShares[account];
         if (shares == 0 || totalUserShares == 0) return 0;
-        uint256 idleBalance = IERC20(depositToken).balanceOf(address(this));
-        assetsOut = (shares * idleBalance) / totalUserShares;
+        assetsOut = convertToAssets(shares);
     }
 
     function previewWithdrawToWallet(uint256 assetsOut) public view returns (uint256 sharesBurned) {
         if (assetsOut == 0) return 0;
-        uint256 idleBalance = IERC20(depositToken).balanceOf(address(this));
+        uint256 idleBalance = totalAssets();
         uint256 totalShares = totalUserShares;
         if (idleBalance == 0 || totalShares == 0) return 0;
         sharesBurned = ((assetsOut * totalShares) + (idleBalance - 1)) / idleBalance;
@@ -274,16 +323,15 @@ contract TreasuryVault is AccessControl, Pausable, ReentrancyGuard {
 
     function depositUsdc(uint256 amountIn) external whenNotPaused nonReentrant returns (uint256 sharesOut) {
         if (amountIn == 0) revert InvalidAmount();
-        if (hasOpenLpPosition()) revert PositionStillActive();
 
         _requireTokenAllowed(depositToken);
-        uint256 idleBalance = IERC20(depositToken).balanceOf(address(this));
+        uint256 assetsBefore = totalAssets();
         if (totalUserShares == 0) {
-            if (idleBalance != 0) revert VaultHasUnaccountedAssets(idleBalance);
+            if (assetsBefore != 0) revert VaultHasUnaccountedAssets(assetsBefore);
             sharesOut = amountIn;
         } else {
-            if (idleBalance == 0) revert InvalidAmount();
-            sharesOut = (amountIn * totalUserShares) / idleBalance;
+            if (assetsBefore == 0) revert InvalidAmount();
+            sharesOut = (amountIn * totalUserShares) / assetsBefore;
             if (sharesOut == 0) revert InvalidAmount();
         }
 
@@ -302,7 +350,6 @@ contract TreasuryVault is AccessControl, Pausable, ReentrancyGuard {
     {
         if (amountOut == 0) revert InvalidAmount();
         if (receiver == address(0)) revert ZeroAddress();
-        if (hasOpenLpPosition()) revert PositionStillActive();
 
         sharesBurned = previewWithdrawToWallet(amountOut);
         if (sharesBurned == 0) revert InvalidAmount();
@@ -311,6 +358,8 @@ contract TreasuryVault is AccessControl, Pausable, ReentrancyGuard {
         if (sharesBurned > currentShares) {
             revert InsufficientShares(currentShares, sharesBurned);
         }
+
+        _ensureIdleLiquidityForWithdraw(amountOut);
 
         userShares[msg.sender] = currentShares - sharesBurned;
         totalUserShares -= sharesBurned;
@@ -379,6 +428,7 @@ contract TreasuryVault is AccessControl, Pausable, ReentrancyGuard {
     function _enterPool(EnterRequest memory request) internal returns (uint256 lpReceived) {
         if (request.amountIn == 0) revert InvalidAmount();
         if (request.minOut == 0) revert InvalidMinOut();
+        if (request.tokenIn != depositToken) revert TokenMismatch(depositToken, request.tokenIn);
 
         _requireTokenAllowed(request.tokenIn);
         _requireTokenAllowed(request.lpToken);
@@ -388,7 +438,7 @@ contract TreasuryVault is AccessControl, Pausable, ReentrancyGuard {
         _validateDeadline(request.deadline);
         _enforceMovementCaps(request.tokenIn, request.amountIn);
 
-        _trackLpToken(request.lpToken);
+        _trackLpToken(request.lpToken, request.target, request.pool);
         IERC20(request.tokenIn).forceApprove(request.target, request.amountIn);
 
         lpReceived = ITargetAdapter(request.target).enter(
@@ -416,6 +466,7 @@ contract TreasuryVault is AccessControl, Pausable, ReentrancyGuard {
     function _exitPool(ExitRequest memory request) internal returns (uint256 amountOut) {
         if (request.amountIn == 0) revert InvalidAmount();
         if (request.minOut == 0) revert InvalidMinOut();
+        if (request.tokenOut != depositToken) revert TokenMismatch(depositToken, request.tokenOut);
 
         _requireTokenAllowed(request.lpToken);
         _requireTokenAllowed(request.tokenOut);
@@ -490,9 +541,133 @@ contract TreasuryVault is AccessControl, Pausable, ReentrancyGuard {
         dailyMovementBpsUsed = nextUsed;
     }
 
-    function _trackLpToken(address lpToken) internal {
-        if (trackedLpTokens[lpToken]) return;
-        trackedLpTokens[lpToken] = true;
-        trackedLpTokenList.push(lpToken);
+    function _ensureIdleLiquidityForWithdraw(uint256 amountOut) internal {
+        uint256 idleBalance = IERC20(depositToken).balanceOf(address(this));
+        if (idleBalance >= amountOut) return;
+
+        _unwindForWithdraw(amountOut - idleBalance);
+
+        uint256 updatedIdle = IERC20(depositToken).balanceOf(address(this));
+        if (updatedIdle < amountOut) {
+            revert InsufficientLiquidityForWithdraw(updatedIdle, amountOut);
+        }
+    }
+
+    function _unwindForWithdraw(uint256 amountNeeded) internal {
+        uint256 recovered;
+        for (uint256 i = 0; i < trackedLpTokenList.length && recovered < amountNeeded; i++) {
+            address lpToken = trackedLpTokenList[i];
+            uint256 lpBalance = IERC20(lpToken).balanceOf(address(this));
+            if (lpBalance == 0) continue;
+
+            uint256 totalPreviewAssets = _previewRedeemAssets(lpToken, lpBalance);
+            if (totalPreviewAssets == 0) continue;
+
+            uint256 remainingAssets = amountNeeded - recovered;
+            uint256 lpToRedeem = ((remainingAssets * lpBalance) + (totalPreviewAssets - 1)) / totalPreviewAssets;
+            if (lpToRedeem > lpBalance) {
+                lpToRedeem = lpBalance;
+            }
+
+            lpToRedeem = _resolveCappedMovementAmount(lpToken, lpToRedeem);
+            if (lpToRedeem == 0) continue;
+
+            ExitRequest memory autoExit = _buildAutoExitRequest(lpToken, lpToRedeem);
+            uint256 amountOut = _exitPool(autoExit);
+            recovered += amountOut;
+
+            emit UserWithdrawLiquidityUnwound(lpToken, lpToRedeem, amountOut, block.timestamp);
+        }
+    }
+
+    function _buildAutoExitRequest(address lpToken, uint256 amountIn) internal view returns (ExitRequest memory request) {
+        LpRoute memory route = lpRoutes[lpToken];
+        if (route.target == address(0) || route.pool == address(0)) revert MissingLpRoute(lpToken);
+
+        request.target = route.target;
+        request.pool = route.pool;
+        request.lpToken = lpToken;
+        request.tokenOut = depositToken;
+        request.amountIn = amountIn;
+        request.minOut = 1;
+        request.deadline = block.timestamp + uint256(maxDeadlineDelay);
+        request.data = bytes("");
+        request.pair = "";
+        request.protocol = "auto_withdraw_unwind";
+    }
+
+    function _resolveCappedMovementAmount(address token, uint256 requestedAmount) internal view returns (uint256) {
+        if (requestedAmount == 0) return 0;
+        uint256 balance = IERC20(token).balanceOf(address(this));
+        if (balance == 0) return 0;
+
+        uint256 movementCap = (balance * movementCapBps) / BPS_DENOMINATOR;
+        uint256 allowed = movementCap > 0 ? movementCap : balance;
+        if (allowed > balance) {
+            allowed = balance;
+        }
+        if (requestedAmount < allowed) {
+            allowed = requestedAmount;
+        }
+
+        uint16 capBps = dailyMovementCapBps;
+        if (capBps == 0) {
+            return allowed;
+        }
+
+        uint256 windowStart = dailyMovementWindowStart;
+        if (windowStart != 0 && block.timestamp < windowStart + 1 days) {
+            uint256 usedBps = dailyMovementBpsUsed;
+            if (usedBps >= capBps) {
+                return 0;
+            }
+            uint256 remainingBps = uint256(capBps) - usedBps;
+            uint256 allowedByDaily = (balance * remainingBps) / BPS_DENOMINATOR;
+            if (allowedByDaily == 0) {
+                return 0;
+            }
+            if (allowed > allowedByDaily) {
+                allowed = allowedByDaily;
+            }
+        }
+
+        return allowed;
+    }
+
+    function _previewRedeemAssets(address lpToken, uint256 lpAmount) internal view returns (uint256 assetsOut) {
+        if (lpAmount == 0) return 0;
+        LpRoute memory route = lpRoutes[lpToken];
+        if (route.pool == address(0)) revert MissingLpRoute(lpToken);
+        try ILpValuationPool(route.pool).previewRedeem(lpAmount) returns (uint256 previewOut) {
+            return previewOut;
+        } catch {
+            revert UnsupportedPoolPreview(route.pool);
+        }
+    }
+
+    function _validatePoolAsset(address pool) internal view {
+        try ILpValuationPool(pool).asset() returns (address assetToken) {
+            if (assetToken != depositToken) {
+                revert UnsupportedPoolAsset(pool, depositToken, assetToken);
+            }
+        } catch {
+            revert UnsupportedPoolPreview(pool);
+        }
+    }
+
+    function _trackLpToken(address lpToken, address target, address pool) internal {
+        if (lpToken == address(0) || target == address(0) || pool == address(0)) revert ZeroAddress();
+        if (!trackedLpTokens[lpToken]) {
+            trackedLpTokens[lpToken] = true;
+            trackedLpTokenList.push(lpToken);
+        }
+
+        _validatePoolAsset(pool);
+        LpRoute storage route = lpRoutes[lpToken];
+        if (route.target != target || route.pool != pool) {
+            route.target = target;
+            route.pool = pool;
+            emit LpRouteTracked(lpToken, target, pool);
+        }
     }
 }

@@ -23,8 +23,9 @@ export function AgentHowItWorksCard() {
         </p>
         <p>
           3) Automatic loops do not enforce a 24h hold wait. Manual operator actions can pause,
-          exit to USDC parking, or rotate to another pool. User wallet withdrawals are available
-          while capital is parked in USDC.
+          exit to USDC parking, or rotate to another pool. On anytime-liquidity vault versions,
+          user wallet withdrawals can execute even while LP is active (the vault unwinds as
+          needed).
         </p>
         <p>
           4) Yield comes from pool APY + incentives minus fees/costs. The dashboard reflects live
