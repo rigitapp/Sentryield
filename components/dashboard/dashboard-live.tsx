@@ -11,6 +11,7 @@ import { RiskGuardsCard } from "@/components/dashboard/risk-guards-card";
 import { ApyChart } from "@/components/dashboard/apy-chart";
 import { RotationsTable } from "@/components/dashboard/rotations-table";
 import { TweetFeed } from "@/components/dashboard/tweet-feed";
+import { Badge } from "@/components/ui/badge";
 import type { DashboardData } from "@/lib/types";
 
 interface DashboardLiveProps {
@@ -28,6 +29,16 @@ function formatTimestamp(isoString: string): string {
     minute: "2-digit",
     second: "2-digit"
   });
+}
+
+function sourceBadgeClass(source: DashboardData["botStateSource"]): string {
+  if (source === "remote") {
+    return "border-green-500/40 text-green-700 dark:text-green-300";
+  }
+  if (source === "local") {
+    return "border-amber-500/40 text-amber-700 dark:text-amber-300";
+  }
+  return "border-red-500/40 text-red-700 dark:text-red-300";
 }
 
 export function DashboardLive({
@@ -91,9 +102,14 @@ export function DashboardLive({
 
       <main className="container mx-auto p-4 lg:p-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-          <p className="text-xs text-muted-foreground">
-            Source: {data.dataSource === "bot_state" ? "bot state" : "empty state"}
-          </p>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span>
+              Source: {data.dataSource === "bot_state" ? "bot state" : "empty state"}
+            </span>
+            <Badge variant="outline" className={`text-[10px] uppercase ${sourceBadgeClass(data.botStateSource)}`}>
+              {data.botStateSource}
+            </Badge>
+          </div>
           <p className="text-xs text-muted-foreground">
             {isRefreshing ? "Refreshing..." : `Last sync: ${lastSyncLabel}`}
           </p>
@@ -114,6 +130,15 @@ export function DashboardLive({
         )}
         {refreshError ? (
           <p className="mb-4 text-xs text-warning">{refreshError}</p>
+        ) : null}
+        {data.stateWarnings.length ? (
+          <div className="mb-4 space-y-1">
+            {data.stateWarnings.map((warning, index) => (
+              <p key={`state-warning-${index}`} className="text-xs text-warning">
+                {warning}
+              </p>
+            ))}
+          </div>
         ) : null}
 
         <div className="grid gap-6 lg:grid-cols-12">

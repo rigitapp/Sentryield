@@ -18,41 +18,86 @@ interface CacheEntry {
   expiresAt: number;
 }
 
+export interface PriceOracleTelemetry {
+  cacheFreshHits: number;
+  staleFallbackHits: number;
+  stableFallbackHits: number;
+  networkFetchSuccesses: number;
+  fetchFailures: number;
+}
+
 export class LivePriceOracle implements PriceOracle {
   private readonly cache = new Map<string, CacheEntry>();
+  private telemetry: PriceOracleTelemetry = {
+    cacheFreshHits: 0,
+    staleFallbackHits: 0,
+    stableFallbackHits: 0,
+    networkFetchSuccesses: 0,
+    fetchFailures: 0
+  };
 
   constructor(private readonly config: LivePriceOracleConfig) {}
 
   async getPriceUsd(symbol: string): Promise<number> {
     const normalized = symbol.trim().toUpperCase();
-    const cached = this.cache.get(normalized);
-    const now = Date.now();
-    if (cached && cached.expiresAt > now) {
-      return cached.value;
+    const freshCached = this.readCachedValue(normalized, false);
+    if (freshCached !== null) {
+      this.telemetry.cacheFreshHits += 1;
+      return freshCached;
     }
 
-    const values = await this.fetchPrices([normalized]);
-    const value = values[normalized];
-    if (value === undefined) {
-      throw new Error(`Live price unavailable for ${normalized}.`);
+    try {
+      const values = await this.fetchPrices([normalized]);
+      const value = values[normalized];
+      if (value === undefined) {
+        throw new Error(`Live price unavailable for ${normalized}.`);
+      }
+      this.writeCache(normalized, value);
+      this.telemetry.networkFetchSuccesses += 1;
+      return value;
+    } catch (error) {
+      this.telemetry.fetchFailures += 1;
+      const staleCached = this.readCachedValue(normalized, true);
+      if (staleCached !== null) {
+        this.telemetry.staleFallbackHits += 1;
+        console.warn(
+          `[price-oracle] Using stale cached price for ${normalized}: ${toErrorMessage(error)}`
+        );
+        return staleCached;
+      }
+      throw error;
     }
-    this.cache.set(normalized, {
-      value,
-      expiresAt: now + this.config.cacheTtlMs
-    });
-    return value;
   }
 
   async getStablePricesUsd(): Promise<Record<string, number>> {
-    const values = await this.fetchPrices(this.config.stableSymbols);
-    const now = Date.now();
-    for (const [symbol, value] of Object.entries(values)) {
-      this.cache.set(symbol, {
-        value,
-        expiresAt: now + this.config.cacheTtlMs
-      });
+    const stableSymbols = this.normalizeSymbols(this.config.stableSymbols);
+    try {
+      const values = await this.fetchPrices(stableSymbols);
+      for (const [symbol, value] of Object.entries(values)) {
+        this.writeCache(symbol, value);
+      }
+      this.telemetry.networkFetchSuccesses += 1;
+      return values;
+    } catch (error) {
+      this.telemetry.fetchFailures += 1;
+      const fallback = this.readCachedSnapshot(stableSymbols);
+      if (fallback) {
+        this.telemetry.stableFallbackHits += 1;
+        console.warn(
+          `[price-oracle] Using stale cached stable prices: ${toErrorMessage(error)}`
+        );
+        return fallback;
+      }
+      throw new Error(
+        `Stable price fetch failed and no cached fallback is available: ${toErrorMessage(error)}`
+      );
     }
-    return values;
+  }
+
+  getTelemetrySnapshot(): PriceOracleTelemetry {
+    return {
+      ...this.telemetry
+    };
   }
 
   private async fetchPrices(symbols: string[]): Promise<Record<string, number>> {
@@ -108,6 +153,37 @@ export class LivePriceOracle implements PriceOracle {
       clearTimeout(timeout);
     }
   }
+
+  private normalizeSymbols(symbols: string[]): string[] {
+    return [...new Set(symbols.map((value) => value.trim().toUpperCase()))];
+  }
+
+  private writeCache(symbol: string, value: number): void {
+    const normalized = symbol.trim().toUpperCase();
+    const now = Date.now();
+    this.cache.set(normalized, {
+      value,
+      expiresAt: now + this.config.cacheTtlMs
+    });
+  }
+
+  private readCachedValue(symbol: string, allowStale: boolean): number | null {
+    const normalized = symbol.trim().toUpperCase();
+    const cached = this.cache.get(normalized);
+    if (!cached) return null;
+    if (!allowStale && cached.expiresAt <= Date.now()) return null;
+    return cached.value;
+  }
+
+  private readCachedSnapshot(symbols: string[]): Record<string, number> | null {
+    const result: Record<string, number> = {};
+    for (const symbol of symbols) {
+      const value = this.readCachedValue(symbol, true);
+      if (value === null) return null;
+      result[symbol] = value;
+    }
+    return result;
+  }
 }
 
 export function computeIncentiveAprBps(
@@ -131,4 +207,10 @@ export function computeNetApyBps(
 export function estimatePaybackHours(costBps: number, deltaApyBps: number): number {
   if (deltaApyBps <= 0) return Number.POSITIVE_INFINITY;
   return (costBps / deltaApyBps) * 365 * 24;
+}
+
+function toErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  return "unknown_error";
 }

@@ -88,6 +88,8 @@ export interface DashboardData {
   nextTweetPreview: Tweet;
   updatedAt: string;
   dataSource: "bot_state" | "empty";
+  botStateSource: "remote" | "local" | "empty";
+  stateWarnings: string[];
   isDryRun: boolean;
   liveModeArmed: boolean;
   chainId: number;

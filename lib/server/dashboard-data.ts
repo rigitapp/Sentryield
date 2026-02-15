@@ -62,6 +62,12 @@ interface BotState {
   tweets: BotTweet[];
 }
 
+interface ReadBotStateResult {
+  state: BotState;
+  source: "remote" | "local" | "empty";
+  warnings: string[];
+}
+
 interface RemoteStatusEnvelope {
   healthy?: unknown;
   ready?: unknown;
@@ -97,7 +103,8 @@ interface ChainConfig {
 const CHAIN_CONFIG = loadChainConfig();
 
 export async function getDashboardData(): Promise<DashboardData> {
-  const state = await readBotState();
+  const stateResult = await readBotState();
+  const state = stateResult.state;
   const hasStateData =
     Boolean(state.position) ||
     state.snapshots.length > 0 ||
@@ -151,6 +158,8 @@ export async function getDashboardData(): Promise<DashboardData> {
     nextTweetPreview,
     updatedAt: toIsoString(latestTimestamp || nowSeconds()),
     dataSource: hasStateData ? "bot_state" : "empty",
+    botStateSource: stateResult.source,
+    stateWarnings: stateResult.warnings,
     isDryRun,
     liveModeArmed,
     chainId,
@@ -164,11 +173,12 @@ export async function getDashboardData(): Promise<DashboardData> {
   };
 }
 
-async function readBotState(): Promise<BotState> {
+async function readBotState(): Promise<ReadBotStateResult> {
   const remoteUrl =
     process.env.BOT_STATE_URL?.trim() || process.env.BOT_STATE_JSON_URL?.trim() || "";
   const remoteAuthToken = process.env.BOT_STATE_AUTH_TOKEN?.trim() || "";
   if (remoteUrl) {
+    const warnings: string[] = [];
     try {
       const response = await fetch(remoteUrl, {
         headers: remoteAuthToken
@@ -185,32 +195,64 @@ async function readBotState(): Promise<BotState> {
           if (parsed.healthy !== true || parsed.ready !== true) {
             throw new Error("Remote bot endpoint is not healthy/ready.");
           }
-          return toBotState(parsed.state);
+          return {
+            state: toBotState(parsed.state),
+            source: "remote",
+            warnings
+          };
         }
-        return toBotState(parsed);
+        return {
+          state: toBotState(parsed),
+          source: "remote",
+          warnings
+        };
       }
-    } catch {
-      // Treat unreachable remote state as empty.
+      warnings.push(`Remote bot state request failed (${response.status}).`);
+    } catch (error) {
+      warnings.push(`Remote bot state request failed: ${toErrorMessage(error)}`);
     }
+
+    const localFallback = await readLocalBotState();
+    if (localFallback) {
+      warnings.push("Using local bot state fallback.");
+      return {
+        state: localFallback,
+        source: "local",
+        warnings
+      };
+    }
+
+    warnings.push("No local bot state fallback available.");
     return {
-      position: null,
-      snapshots: [],
-      decisions: [],
-      tweets: []
+      state: emptyBotState(),
+      source: "empty",
+      warnings
     };
   }
 
+  const localState = await readLocalBotState();
+  if (localState) {
+    return {
+      state: localState,
+      source: "local",
+      warnings: []
+    };
+  }
+
+  return {
+    state: emptyBotState(),
+    source: "empty",
+    warnings: []
+  };
+}
+
+async function readLocalBotState(): Promise<BotState | null> {
   const path = process.env.BOT_STATE_PATH?.trim() || DEFAULT_STATE_PATH;
   try {
     const raw = await readFile(path, "utf8");
     return toBotState(JSON.parse(raw) as unknown);
   } catch {
-    return {
-      position: null,
-      snapshots: [],
-      decisions: [],
-      tweets: []
-    };
+    return null;
   }
 }
 
@@ -333,6 +375,15 @@ function sanitizeTweets(input: unknown): BotTweet[] {
   }
 
   return sanitized.sort((a, b) => a.timestamp - b.timestamp);
+}
+
+function emptyBotState(): BotState {
+  return {
+    position: null,
+    snapshots: [],
+    decisions: [],
+    tweets: []
+  };
 }
 
 function mapCurrentPosition(
@@ -892,4 +943,10 @@ function nowSeconds(): number {
 function round(value: number, decimals = 2): number {
   const factor = 10 ** decimals;
   return Math.round(value * factor) / factor;
+}
+
+function toErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  return "unknown_error";
 }
