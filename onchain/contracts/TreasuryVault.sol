@@ -18,6 +18,8 @@ contract TreasuryVault is AccessControl, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     uint256 public constant BPS_DENOMINATOR = 10_000;
+    uint256 public constant AUTO_UNWIND_MIN_OUT_BPS = 9_900; // 1% max slippage on user-withdraw unwinds
+    uint256 public constant INITIAL_DEAD_SHARES = 1; // keep total shares non-zero after first deposit
 
     bytes32 public constant OWNER_ROLE = keccak256("OWNER_ROLE");
     bytes32 public constant EXECUTOR_ROLE = keccak256("EXECUTOR_ROLE");
@@ -129,7 +131,9 @@ contract TreasuryVault is AccessControl, Pausable, ReentrancyGuard {
     event UserWithdrawn(
         address indexed user, address indexed receiver, uint256 amountOut, uint256 sharesBurned, uint256 timestamp
     );
+    event DeadSharesLocked(uint256 sharesLocked, uint256 timestamp);
     event LpRouteTracked(address indexed lpToken, address indexed target, address indexed pool);
+    event LpTokenPruned(address indexed lpToken);
     event UserWithdrawLiquidityUnwound(address indexed lpToken, uint256 lpBurned, uint256 amountOut, uint256 timestamp);
 
     error ZeroAddress();
@@ -156,6 +160,7 @@ contract TreasuryVault is AccessControl, Pausable, ReentrancyGuard {
     error MissingLpRoute(address lpToken);
     error UnsupportedPoolPreview(address pool);
     error InsufficientLiquidityForWithdraw(uint256 available, uint256 requested);
+    error InitialDepositTooSmall(uint256 minAmount, uint256 provided);
 
     constructor(
         address owner_,
@@ -280,6 +285,24 @@ contract TreasuryVault is AccessControl, Pausable, ReentrancyGuard {
         return true;
     }
 
+    function trackedLpTokenCount() external view returns (uint256) {
+        return trackedLpTokenList.length;
+    }
+
+    function pruneTrackedLpTokens(uint256 maxRemovals) external onlyRole(OWNER_ROLE) returns (uint256 removed) {
+        uint256 limit = maxRemovals == 0 ? type(uint256).max : maxRemovals;
+        uint256 i;
+        while (i < trackedLpTokenList.length && removed < limit) {
+            address lpToken = trackedLpTokenList[i];
+            if (IERC20(lpToken).balanceOf(address(this)) == 0) {
+                _pruneTrackedLpTokenAt(i, lpToken);
+                removed++;
+                continue;
+            }
+            i++;
+        }
+    }
+
     function totalAssets() public view returns (uint256 assetsOut) {
         assetsOut = IERC20(depositToken).balanceOf(address(this));
         for (uint256 i = 0; i < trackedLpTokenList.length; i++) {
@@ -328,7 +351,13 @@ contract TreasuryVault is AccessControl, Pausable, ReentrancyGuard {
         uint256 assetsBefore = totalAssets();
         if (totalUserShares == 0) {
             if (assetsBefore != 0) revert VaultHasUnaccountedAssets(assetsBefore);
-            sharesOut = amountIn;
+            if (amountIn <= INITIAL_DEAD_SHARES) {
+                revert InitialDepositTooSmall(INITIAL_DEAD_SHARES + 1, amountIn);
+            }
+            sharesOut = amountIn - INITIAL_DEAD_SHARES;
+            userShares[address(0)] = INITIAL_DEAD_SHARES;
+            totalUserShares = INITIAL_DEAD_SHARES;
+            emit DeadSharesLocked(INITIAL_DEAD_SHARES, block.timestamp);
         } else {
             if (assetsBefore == 0) revert InvalidAmount();
             sharesOut = (amountIn * totalUserShares) / assetsBefore;
@@ -555,13 +584,19 @@ contract TreasuryVault is AccessControl, Pausable, ReentrancyGuard {
 
     function _unwindForWithdraw(uint256 amountNeeded) internal {
         uint256 recovered;
-        for (uint256 i = 0; i < trackedLpTokenList.length && recovered < amountNeeded; i++) {
+        for (uint256 i = 0; i < trackedLpTokenList.length && recovered < amountNeeded;) {
             address lpToken = trackedLpTokenList[i];
             uint256 lpBalance = IERC20(lpToken).balanceOf(address(this));
-            if (lpBalance == 0) continue;
+            if (lpBalance == 0) {
+                _pruneTrackedLpTokenAt(i, lpToken);
+                continue;
+            }
 
             uint256 totalPreviewAssets = _previewRedeemAssets(lpToken, lpBalance);
-            if (totalPreviewAssets == 0) continue;
+            if (totalPreviewAssets == 0) {
+                i++;
+                continue;
+            }
 
             uint256 remainingAssets = amountNeeded - recovered;
             uint256 lpToRedeem = ((remainingAssets * lpBalance) + (totalPreviewAssets - 1)) / totalPreviewAssets;
@@ -570,26 +605,44 @@ contract TreasuryVault is AccessControl, Pausable, ReentrancyGuard {
             }
 
             lpToRedeem = _resolveCappedMovementAmount(lpToken, lpToRedeem);
-            if (lpToRedeem == 0) continue;
+            if (lpToRedeem == 0) {
+                i++;
+                continue;
+            }
 
             ExitRequest memory autoExit = _buildAutoExitRequest(lpToken, lpToRedeem);
             uint256 amountOut = _exitPool(autoExit);
             recovered += amountOut;
 
             emit UserWithdrawLiquidityUnwound(lpToken, lpToRedeem, amountOut, block.timestamp);
+
+            if (IERC20(lpToken).balanceOf(address(this)) == 0) {
+                _pruneTrackedLpTokenAt(i, lpToken);
+                continue;
+            }
+
+            i++;
         }
     }
 
     function _buildAutoExitRequest(address lpToken, uint256 amountIn) internal view returns (ExitRequest memory request) {
         LpRoute memory route = lpRoutes[lpToken];
         if (route.target == address(0) || route.pool == address(0)) revert MissingLpRoute(lpToken);
+        uint256 previewOut = _previewRedeemAssets(lpToken, amountIn);
+        uint256 minOut = (previewOut * AUTO_UNWIND_MIN_OUT_BPS) / BPS_DENOMINATOR;
+        if (minOut == 0) {
+            minOut = previewOut;
+        }
+        if (minOut == 0) {
+            minOut = 1;
+        }
 
         request.target = route.target;
         request.pool = route.pool;
         request.lpToken = lpToken;
         request.tokenOut = depositToken;
         request.amountIn = amountIn;
-        request.minOut = 1;
+        request.minOut = minOut;
         request.deadline = block.timestamp + uint256(maxDeadlineDelay);
         request.data = bytes("");
         request.pair = "";
@@ -669,5 +722,16 @@ contract TreasuryVault is AccessControl, Pausable, ReentrancyGuard {
             route.pool = pool;
             emit LpRouteTracked(lpToken, target, pool);
         }
+    }
+
+    function _pruneTrackedLpTokenAt(uint256 index, address lpToken) internal {
+        uint256 lastIndex = trackedLpTokenList.length - 1;
+        if (index != lastIndex) {
+            trackedLpTokenList[index] = trackedLpTokenList[lastIndex];
+        }
+        trackedLpTokenList.pop();
+        trackedLpTokens[lpToken] = false;
+        delete lpRoutes[lpToken];
+        emit LpTokenPruned(lpToken);
     }
 }

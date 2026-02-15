@@ -497,14 +497,15 @@ describe("TreasuryVault + CurvanceTargetAdapter", function () {
     it("deposits and withdraws to wallet while parked in USDC", async function () {
       const { depositor, usdc, vault } = await loadFixture(userFlowFixture);
       const depositAmount = 200_000n * ONE_USDC;
+      const firstSharesOut = depositAmount - 1n;
       await usdc.connect(depositor).approve(await vault.getAddress(), depositAmount);
 
       await expect(vault.connect(depositor).depositUsdc(depositAmount))
         .to.emit(vault, "UserDeposited")
-        .withArgs(depositor.address, depositAmount, depositAmount, anyValue);
+        .withArgs(depositor.address, depositAmount, firstSharesOut, anyValue);
 
-      expect(await vault.userShares(depositor.address)).to.equal(depositAmount);
-      expect(await vault.maxWithdrawToWallet(depositor.address)).to.equal(depositAmount);
+      expect(await vault.userShares(depositor.address)).to.equal(firstSharesOut);
+      expect(await vault.maxWithdrawToWallet(depositor.address)).to.equal(firstSharesOut);
 
       const withdrawAmount = 50_000n * ONE_USDC;
       await expect(vault.connect(depositor).withdrawToWallet(withdrawAmount, depositor.address))
@@ -537,7 +538,7 @@ describe("TreasuryVault + CurvanceTargetAdapter", function () {
       });
       await vault.connect(executor).enterPool(enterRequest);
       expect(await vault.hasOpenLpPosition()).to.equal(true);
-      expect(await vault.maxWithdrawToWallet(depositor.address)).to.equal(initialDeposit);
+      expect(await vault.maxWithdrawToWallet(depositor.address)).to.equal(initialDeposit - 1n);
 
       await expect(vault.connect(depositor).depositUsdc(secondDeposit))
         .to.emit(vault, "UserDeposited")
@@ -553,6 +554,50 @@ describe("TreasuryVault + CurvanceTargetAdapter", function () {
       expect(await usdc.balanceOf(depositor.address)).to.equal(
         1_000_000n * ONE_USDC - initialDeposit - secondDeposit + withdrawAmount
       );
+    });
+
+    it("rejects too-small first deposit due to dead-share lock", async function () {
+      const { depositor, usdc, vault } = await loadFixture(userFlowFixture);
+      await usdc.connect(depositor).approve(await vault.getAddress(), 1n);
+
+      await expect(vault.connect(depositor).depositUsdc(1n))
+        .to.be.revertedWithCustomError(vault, "InitialDepositTooSmall")
+        .withArgs(2n, 1n);
+    });
+
+    it("allows owner to prune tracked LP tokens once balances are zero", async function () {
+      const { owner, depositor, executor, usdc, pool, adapter, vault } = await loadFixture(
+        userFlowFixture
+      );
+      const depositAmount = 200_000n * ONE_USDC;
+      await usdc.connect(depositor).approve(await vault.getAddress(), depositAmount);
+      await vault.connect(depositor).depositUsdc(depositAmount);
+
+      const enterRequest = await makeEnterRequest({
+        target: await adapter.getAddress(),
+        pool: await pool.getAddress(),
+        tokenIn: await usdc.getAddress(),
+        lpToken: await pool.getAddress(),
+        amountIn: 100_000n * ONE_USDC
+      });
+      await vault.connect(executor).enterPool(enterRequest);
+      await vault.connect(owner).setMovementCapBps(10_000);
+
+      const fullExitRequest = await makeExitRequest({
+        target: await adapter.getAddress(),
+        pool: await pool.getAddress(),
+        lpToken: await pool.getAddress(),
+        tokenOut: await usdc.getAddress(),
+        amountIn: 100_000n * ONE_USDC,
+        minOut: 100_000n * ONE_USDC
+      });
+      await vault.connect(executor).exitPool(fullExitRequest);
+
+      expect(await vault.trackedLpTokenCount()).to.equal(1n);
+      await expect(vault.connect(owner).pruneTrackedLpTokens(1))
+        .to.emit(vault, "LpTokenPruned")
+        .withArgs(await pool.getAddress());
+      expect(await vault.trackedLpTokenCount()).to.equal(0n);
     });
 
     it("rejects first user deposit when vault already has unaccounted USDC", async function () {

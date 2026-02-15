@@ -7,7 +7,6 @@ import { AgentActivityCard } from "@/components/dashboard/agent-activity-card";
 import { DepositUsdcCard } from "@/components/dashboard/deposit-usdc-card";
 import { AgentControlsCard } from "@/components/dashboard/agent-controls-card";
 import { AgentHowItWorksCard } from "@/components/dashboard/agent-how-it-works-card";
-import { MigrationHelperCard } from "@/components/dashboard/migration-helper-card";
 import { RiskGuardsCard } from "@/components/dashboard/risk-guards-card";
 import { ApyChart } from "@/components/dashboard/apy-chart";
 import { RotationsTable } from "@/components/dashboard/rotations-table";
@@ -136,7 +135,6 @@ export function DashboardLive({
               availablePools={data.availablePools}
               currentPosition={data.currentPosition}
             />
-            <MigrationHelperCard />
             <RiskGuardsCard guardStatus={data.guardStatus} />
             <AgentHowItWorksCard />
           </div>

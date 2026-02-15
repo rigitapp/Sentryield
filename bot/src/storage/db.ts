@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type {
   DbState,
@@ -9,14 +9,18 @@ import type {
   TweetRecord
 } from "../types.js";
 
-const DEFAULT_STATE: DbState = {
-  position: null,
-  snapshots: [],
-  decisions: [],
-  tweets: []
-};
+function cloneDefaultState(): DbState {
+  return {
+    position: null,
+    snapshots: [],
+    decisions: [],
+    tweets: []
+  };
+}
 
 export class JsonDb {
+  private opQueue: Promise<void> = Promise.resolve();
+
   constructor(
     private readonly filePath: string,
     private readonly maxSnapshots = 5_000,
@@ -25,50 +29,61 @@ export class JsonDb {
   ) {}
 
   async init(): Promise<void> {
-    await mkdir(dirname(this.filePath), { recursive: true });
-    try {
-      await readFile(this.filePath, "utf8");
-    } catch {
-      await this.writeState(DEFAULT_STATE);
-    }
+    await this.enqueue(async () => {
+      await mkdir(dirname(this.filePath), { recursive: true });
+      try {
+        await readFile(this.filePath, "utf8");
+      } catch {
+        await this.writeState(cloneDefaultState());
+      }
+    });
   }
 
   async getState(): Promise<DbState> {
+    await this.opQueue;
     return this.readState();
   }
 
   async setPosition(position: Position | null): Promise<void> {
-    const state = await this.readState();
-    state.position = position;
-    await this.writeState(state);
+    await this.enqueue(async () => {
+      const state = await this.readState();
+      state.position = position;
+      await this.writeState(state);
+    });
   }
 
   async addSnapshots(snapshots: PoolSnapshot[]): Promise<void> {
-    const state = await this.readState();
-    state.snapshots.push(...snapshots);
-    state.snapshots = state.snapshots.slice(-this.maxSnapshots);
-    await this.writeState(state);
+    await this.enqueue(async () => {
+      const state = await this.readState();
+      state.snapshots.push(...snapshots);
+      state.snapshots = state.snapshots.slice(-this.maxSnapshots);
+      await this.writeState(state);
+    });
   }
 
   async addDecision(decision: Decision): Promise<void> {
-    const state = await this.readState();
-    const record: StoredDecision = {
-      timestamp: decision.timestamp,
-      chosenPoolId: decision.chosenPoolId,
-      reason: decision.reason,
-      action: decision.action,
-      reasonCode: decision.reasonCode
-    };
-    state.decisions.push(record);
-    state.decisions = state.decisions.slice(-this.maxDecisions);
-    await this.writeState(state);
+    await this.enqueue(async () => {
+      const state = await this.readState();
+      const record: StoredDecision = {
+        timestamp: decision.timestamp,
+        chosenPoolId: decision.chosenPoolId,
+        reason: decision.reason,
+        action: decision.action,
+        reasonCode: decision.reasonCode
+      };
+      state.decisions.push(record);
+      state.decisions = state.decisions.slice(-this.maxDecisions);
+      await this.writeState(state);
+    });
   }
 
   async addTweet(tweet: TweetRecord): Promise<void> {
-    const state = await this.readState();
-    state.tweets.push(tweet);
-    state.tweets = state.tweets.slice(-this.maxTweets);
-    await this.writeState(state);
+    await this.enqueue(async () => {
+      const state = await this.readState();
+      state.tweets.push(tweet);
+      state.tweets = state.tweets.slice(-this.maxTweets);
+      await this.writeState(state);
+    });
   }
 
   private async readState(): Promise<DbState> {
@@ -82,11 +97,29 @@ export class JsonDb {
         tweets: parsed.tweets ?? []
       };
     } catch {
-      return DEFAULT_STATE;
+      return cloneDefaultState();
     }
   }
 
   private async writeState(state: DbState): Promise<void> {
-    await writeFile(this.filePath, JSON.stringify(state, null, 2), "utf8");
+    const tempPath = `${this.filePath}.${Date.now().toString(36)}.${Math.random()
+      .toString(16)
+      .slice(2)}.tmp`;
+    await writeFile(tempPath, JSON.stringify(state, null, 2), "utf8");
+    try {
+      await rename(tempPath, this.filePath);
+    } catch (error) {
+      await rm(tempPath, { force: true }).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    const task = this.opQueue.then(operation, operation);
+    this.opQueue = task.then(
+      () => undefined,
+      () => undefined
+    );
+    return task;
   }
 }

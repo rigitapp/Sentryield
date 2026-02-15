@@ -1,116 +1,137 @@
 {
-  "generatedAt": "2026-02-13T22:43:04.134Z",
   "chainId": 143,
-  "vaultAddress": "0x12E086288e8a220c565a957090198a38Ad20d2D3",
-  "transactionCount": 18,
+  "meta": {
+    "name": "Sentryield Vault v3 - Configuration Batch",
+    "description": "Multisig batch to configure allowlists on TreasuryVault (tokens + targets + pool). All calls go to the vault, value=0.",
+    "vault": "0x12E086288e8a220c565a957090198a38Ad20d2D3",
+    "adapter": "0xCD9F363C5B9BDAc667f5dfb6279698df83F11A98"
+  },
   "transactions": [
     {
       "to": "0x12E086288e8a220c565a957090198a38Ad20d2D3",
       "value": "0",
       "data": "0x00571014000000000000000000000000754704bc059f8c67012fed69bc8a327a5aafb6030000000000000000000000000000000000000000000000000000000000000001",
-      "description": "setTokenAllowlist(0x754704Bc059F8C67012fEd69BC8A327a5aafb603, true)"
+      "operation": "CALL",
+      "note": "setTokenAllowlist(0x754704Bc059F8C67012fEd69BC8A327a5aafb603, true)"
     },
     {
       "to": "0x12E086288e8a220c565a957090198a38Ad20d2D3",
       "value": "0",
       "data": "0x0057101400000000000000000000000021adbb60a5fb909e7f1fb48aacc4569615cd97b50000000000000000000000000000000000000000000000000000000000000001",
-      "description": "setTokenAllowlist(0x21aDBb60a5fB909e7F1fB48aACC4569615CD97b5, true)"
+      "operation": "CALL",
+      "note": "setTokenAllowlist(0x21aDBb60a5fB909e7F1fB48aACC4569615CD97b5, true)"
     },
     {
       "to": "0x12E086288e8a220c565a957090198a38Ad20d2D3",
       "value": "0",
       "data": "0x005710140000000000000000000000008ee9fc28b8da872c38a496e9ddb9700bb72617740000000000000000000000000000000000000000000000000000000000000001",
-      "description": "setTokenAllowlist(0x8EE9FC28B8Da872c38A496e9dDB9700bb7261774, true)"
+      "operation": "CALL",
+      "note": "setTokenAllowlist(0x8EE9FC28B8Da872c38A496e9dDB9700bb7261774, true)"
     },
     {
       "to": "0x12E086288e8a220c565a957090198a38Ad20d2D3",
       "value": "0",
       "data": "0x005710140000000000000000000000007c9d4f1695c6282da5e5509aa51fc9fb417c6f1d0000000000000000000000000000000000000000000000000000000000000001",
-      "description": "setTokenAllowlist(0x7C9d4f1695C6282Da5e5509Aa51fC9fb417C6f1d, true)"
+      "operation": "CALL",
+      "note": "setTokenAllowlist(0x7C9d4f1695C6282Da5e5509Aa51fC9fb417C6f1d, true)"
     },
     {
       "to": "0x12E086288e8a220c565a957090198a38Ad20d2D3",
       "value": "0",
       "data": "0x00571014000000000000000000000000beeff443c3cba3e369da795002243beac311ab830000000000000000000000000000000000000000000000000000000000000001",
-      "description": "setTokenAllowlist(0xbeEFf443C3CbA3E369DA795002243BeaC311aB83, true)"
+      "operation": "CALL",
+      "note": "setTokenAllowlist(0xbeEFf443C3CbA3E369DA795002243BeaC311aB83, true)"
     },
     {
       "to": "0x12E086288e8a220c565a957090198a38Ad20d2D3",
       "value": "0",
       "data": "0x0057101400000000000000000000000078999cc96d2ba0341588c60ccb0e91c6c33cf3710000000000000000000000000000000000000000000000000000000000000001",
-      "description": "setTokenAllowlist(0x78999cc96d2Ba0341588C60CcB0E91c6C33CF371, true)"
+      "operation": "CALL",
+      "note": "setTokenAllowlist(0x78999cc96d2Ba0341588C60CcB0E91c6C33CF371, true)"
     },
     {
       "to": "0x12E086288e8a220c565a957090198a38Ad20d2D3",
       "value": "0",
       "data": "0xb25d6f52000000000000000000000000cd9f363c5b9bdac667f5dfb6279698df83f11a980000000000000000000000000000000000000000000000000000000000000001",
-      "description": "setTargetAllowlist(0xCD9F363C5B9BDAc667f5dfb6279698df83F11A98, true)"
+      "operation": "CALL",
+      "note": "setTargetAllowlist(0xCD9F363C5B9BDAc667f5dfb6279698df83F11A98, true)"
     },
     {
       "to": "0x12E086288e8a220c565a957090198a38Ad20d2D3",
       "value": "0",
       "data": "0xb25d6f5200000000000000000000000021adbb60a5fb909e7f1fb48aacc4569615cd97b50000000000000000000000000000000000000000000000000000000000000001",
-      "description": "setTargetAllowlist(0x21aDBb60a5fB909e7F1fB48aACC4569615CD97b5, true)"
+      "operation": "CALL",
+      "note": "setTargetAllowlist(0x21aDBb60a5fB909e7F1fB48aACC4569615CD97b5, true)"
     },
     {
       "to": "0x12E086288e8a220c565a957090198a38Ad20d2D3",
       "value": "0",
       "data": "0xb25d6f5200000000000000000000000097f8609623062fdcd761e2cdda08345784348ca00000000000000000000000000000000000000000000000000000000000000001",
-      "description": "setTargetAllowlist(0x97f8609623062fdcd761E2CdDA08345784348ca0, true)"
+      "operation": "CALL",
+      "note": "setTargetAllowlist(0x97f8609623062fdcd761E2CdDA08345784348ca0, true)"
     },
     {
       "to": "0x12E086288e8a220c565a957090198a38Ad20d2D3",
       "value": "0",
       "data": "0xb25d6f520000000000000000000000008ee9fc28b8da872c38a496e9ddb9700bb72617740000000000000000000000000000000000000000000000000000000000000001",
-      "description": "setTargetAllowlist(0x8EE9FC28B8Da872c38A496e9dDB9700bb7261774, true)"
+      "operation": "CALL",
+      "note": "setTargetAllowlist(0x8EE9FC28B8Da872c38A496e9dDB9700bb7261774, true)"
     },
     {
       "to": "0x12E086288e8a220c565a957090198a38Ad20d2D3",
       "value": "0",
       "data": "0xb25d6f520000000000000000000000007c9d4f1695c6282da5e5509aa51fc9fb417c6f1d0000000000000000000000000000000000000000000000000000000000000001",
-      "description": "setTargetAllowlist(0x7C9d4f1695C6282Da5e5509Aa51fC9fb417C6f1d, true)"
+      "operation": "CALL",
+      "note": "setTargetAllowlist(0x7C9d4f1695C6282Da5e5509Aa51fC9fb417C6f1d, true)"
     },
     {
       "to": "0x12E086288e8a220c565a957090198a38Ad20d2D3",
       "value": "0",
       "data": "0xb25d6f52000000000000000000000000beeff443c3cba3e369da795002243beac311ab830000000000000000000000000000000000000000000000000000000000000001",
-      "description": "setTargetAllowlist(0xbeEFf443C3CbA3E369DA795002243BeaC311aB83, true)"
+      "operation": "CALL",
+      "note": "setTargetAllowlist(0xbeEFf443C3CbA3E369DA795002243BeaC311aB83, true)"
     },
     {
       "to": "0x12E086288e8a220c565a957090198a38Ad20d2D3",
       "value": "0",
       "data": "0xb25d6f5200000000000000000000000078999cc96d2ba0341588c60ccb0e91c6c33cf3710000000000000000000000000000000000000000000000000000000000000001",
-      "description": "setTargetAllowlist(0x78999cc96d2Ba0341588C60CcB0E91c6C33CF371, true)"
+      "operation": "CALL",
+      "note": "setTargetAllowlist(0x78999cc96d2Ba0341588C60CcB0E91c6C33CF371, true)"
     },
     {
       "to": "0x12E086288e8a220c565a957090198a38Ad20d2D3",
       "value": "0",
       "data": "0x0cd3d1c600000000000000000000000021adbb60a5fb909e7f1fb48aacc4569615cd97b50000000000000000000000000000000000000000000000000000000000000001",
-      "description": "setPoolAllowlist(0x21aDBb60a5fB909e7F1fB48aACC4569615CD97b5, true)"
+      "operation": "CALL",
+      "note": "setPoolAllowlist(0x21aDBb60a5fB909e7F1fB48aACC4569615CD97b5, true)"
     },
     {
       "to": "0x12E086288e8a220c565a957090198a38Ad20d2D3",
       "value": "0",
       "data": "0x0cd3d1c60000000000000000000000008ee9fc28b8da872c38a496e9ddb9700bb72617740000000000000000000000000000000000000000000000000000000000000001",
-      "description": "setPoolAllowlist(0x8EE9FC28B8Da872c38A496e9dDB9700bb7261774, true)"
+      "operation": "CALL",
+      "note": "setPoolAllowlist(0x8EE9FC28B8Da872c38A496e9dDB9700bb7261774, true)"
     },
     {
       "to": "0x12E086288e8a220c565a957090198a38Ad20d2D3",
       "value": "0",
       "data": "0x0cd3d1c60000000000000000000000007c9d4f1695c6282da5e5509aa51fc9fb417c6f1d0000000000000000000000000000000000000000000000000000000000000001",
-      "description": "setPoolAllowlist(0x7C9d4f1695C6282Da5e5509Aa51fC9fb417C6f1d, true)"
+      "operation": "CALL",
+      "note": "setPoolAllowlist(0x7C9d4f1695C6282Da5e5509Aa51fC9fb417C6f1d, true)"
     },
     {
       "to": "0x12E086288e8a220c565a957090198a38Ad20d2D3",
       "value": "0",
       "data": "0x0cd3d1c6000000000000000000000000beeff443c3cba3e369da795002243beac311ab830000000000000000000000000000000000000000000000000000000000000001",
-      "description": "setPoolAllowlist(0xbeEFf443C3CbA3E369DA795002243BeaC311aB83, true)"
+      "operation": "CALL",
+      "note": "setPoolAllowlist(0xbeEFf443C3CbA3E369DA795002243BeaC311aB83, true)"
     },
     {
       "to": "0x12E086288e8a220c565a957090198a38Ad20d2D3",
       "value": "0",
       "data": "0x0cd3d1c600000000000000000000000078999cc96d2ba0341588c60ccb0e91c6c33cf3710000000000000000000000000000000000000000000000000000000000000001",
-      "description": "setPoolAllowlist(0x78999cc96d2Ba0341588C60CcB0E91c6C33CF371, true)"
+      "operation": "CALL",
+      "note": "setPoolAllowlist(0x78999cc96d2Ba0341588C60CcB0E91c6C33CF371, true)"
     }
   ]
 }
