@@ -42,6 +42,7 @@ export interface PoolConfig {
 
 export interface TokenConfig {
   USDC: Address;
+  AUSD: Address;
   MON: Address;
   WMON: Address;
 }

@@ -5,10 +5,13 @@ import { join } from "node:path";
 interface CurvanceMainnetConfig {
   tokens: {
     USDC: string;
+    AUSD: string;
   };
   curvance: {
     usdcMarket: string;
-    receiptToken: string;
+    usdcReceiptToken: string;
+    ausdMarket: string;
+    ausdReceiptToken: string;
   };
 }
 
@@ -49,7 +52,7 @@ async function main(): Promise<void> {
 
   let usdcAddress = chainConfig.tokens.USDC;
   let marketAddress = chainConfig.curvance.usdcMarket;
-  let receiptTokenAddress = chainConfig.curvance.receiptToken;
+  let receiptTokenAddress = chainConfig.curvance.usdcReceiptToken;
   const fallbackToMock = process.env.REHEARSAL_FORCE_MOCK === "true";
 
   if (fallbackToMock) {

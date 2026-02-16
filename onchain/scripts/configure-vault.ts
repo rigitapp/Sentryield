@@ -9,10 +9,13 @@ dotenv.config();
 interface CurvanceMainnetConfig {
   tokens: {
     USDC: string;
+    AUSD: string;
   };
   curvance: {
     usdcMarket: string;
-    receiptToken: string;
+    usdcReceiptToken: string;
+    ausdMarket: string;
+    ausdReceiptToken: string;
   };
 }
 
@@ -100,16 +103,20 @@ async function main(): Promise<void> {
 
   const tokenAllowlist = unique([
     curvanceConfig.tokens.USDC,
-    curvanceConfig.curvance.receiptToken,
+    curvanceConfig.tokens.AUSD,
+    curvanceConfig.curvance.usdcReceiptToken,
+    curvanceConfig.curvance.ausdReceiptToken,
     ...parseAddressList(process.env.INIT_TOKEN_ALLOWLIST)
   ]);
   const targetAllowlist = unique([
     adapterAddress,
     curvanceConfig.curvance.usdcMarket,
+    curvanceConfig.curvance.ausdMarket,
     ...parseAddressList(process.env.INIT_TARGET_ALLOWLIST)
   ]);
   const poolAllowlist = unique([
     curvanceConfig.curvance.usdcMarket,
+    curvanceConfig.curvance.ausdMarket,
     ...parseAddressList(process.env.INIT_POOL_ALLOWLIST)
   ]);
 

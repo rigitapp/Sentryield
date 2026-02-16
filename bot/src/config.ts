@@ -22,14 +22,18 @@ interface CurvanceMainnetConfig {
   explorerTxBaseUrl: string;
   tokens: {
     USDC: Address;
+    AUSD: Address;
     MON: Address;
     WMON: Address;
   };
   curvance: {
     centralRegistry: Address;
     usdcMarket: Address;
-    receiptToken: Address;
-    routerOrController: Address;
+    usdcReceiptToken: Address;
+    usdcMarketManager: Address;
+    ausdMarket: Address;
+    ausdReceiptToken: Address;
+    ausdMarketManager: Address;
   };
 }
 
@@ -37,8 +41,6 @@ const CHAIN_CONFIG = JSON.parse(
   readFileSync(CHAIN_CONFIG_PATH, "utf8")
 ) as CurvanceMainnetConfig;
 const PAIRS = ["AUSD/MON", "USDC/MON", "WMON/MON", "shMON/MON", "kMON/MON"] as const;
-const CURVANCE_USDC_MARKET_8EE9 = "0x8EE9FC28B8Da872c38A496e9dDB9700bb7261774" as Address;
-const CURVANCE_USDC_MARKET_7C9D = "0x7C9d4f1695C6282Da5e5509Aa51fC9fb417C6f1d" as Address;
 
 function envNumber(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -96,6 +98,7 @@ function envCsvUpper(name: string, fallback: string[]): string[] {
 
 export const TOKENS: TokenConfig = {
   USDC: CHAIN_CONFIG.tokens.USDC,
+  AUSD: CHAIN_CONFIG.tokens.AUSD,
   MON: CHAIN_CONFIG.tokens.MON,
   WMON: CHAIN_CONFIG.tokens.WMON
 };
@@ -118,6 +121,12 @@ const CURVANCE_REWARD_RATE_PER_SECOND = envNumber("CURVANCE_REWARD_RATE_PER_SECO
 const CURVANCE_PROTOCOL_FEE_BPS = envNumber("CURVANCE_PROTOCOL_FEE_BPS", 8);
 const CURVANCE_ROTATION_COST_BPS = envNumber("CURVANCE_ROTATION_COST_BPS", 12);
 
+const CURVANCE_AUSD_TARGET_ADAPTER = envAddress("CURVANCE_AUSD_TARGET_ADAPTER_ADDRESS", CURVANCE_TARGET_ADAPTER);
+const CURVANCE_AUSD_BASE_APY_BPS = envNumber("BASE_APY_BPS_CURVANCE_AUSD", 400);
+const CURVANCE_AUSD_REWARD_RATE_PER_SECOND = envNumber("CURVANCE_AUSD_REWARD_RATE_PER_SECOND", 0);
+const CURVANCE_AUSD_PROTOCOL_FEE_BPS = envNumber("CURVANCE_AUSD_PROTOCOL_FEE_BPS", CURVANCE_PROTOCOL_FEE_BPS);
+const CURVANCE_AUSD_ROTATION_COST_BPS = envNumber("CURVANCE_AUSD_ROTATION_COST_BPS", CURVANCE_ROTATION_COST_BPS);
+
 const MORPHO_DEFAULT_PAIR = envPair("MORPHO_PAIR", "USDC/MON");
 const MORPHO_TOKEN_IN_ADDRESS = envAddress("MORPHO_TOKEN_IN_ADDRESS", TOKENS.USDC);
 const MORPHO_TARGET_ADAPTER_ADDRESS = envAddress("MORPHO_TARGET_ADAPTER_ADDRESS");
@@ -126,6 +135,13 @@ const MORPHO_REWARD_TOKEN_SYMBOL = envString("MORPHO_REWARD_TOKEN_SYMBOL", "USDC
 const MORPHO_REWARD_RATE_PER_SECOND = envNumber("MORPHO_REWARD_RATE_PER_SECOND", 0);
 const MORPHO_PROTOCOL_FEE_BPS = envNumber("MORPHO_PROTOCOL_FEE_BPS", 8);
 const MORPHO_ROTATION_COST_BPS = envNumber("MORPHO_ROTATION_COST_BPS", 14);
+
+const MORPHO_AUSD_TARGET_ADAPTER_ADDRESS = envAddress("MORPHO_AUSD_TARGET_ADAPTER_ADDRESS", MORPHO_TARGET_ADAPTER_ADDRESS);
+const MORPHO_AUSD_BASE_APY_BPS = envNumber("BASE_APY_BPS_MORPHO_AUSD", 380);
+const MORPHO_AUSD_REWARD_TOKEN_SYMBOL = envString("MORPHO_AUSD_REWARD_TOKEN_SYMBOL", "AUSD");
+const MORPHO_AUSD_REWARD_RATE_PER_SECOND = envNumber("MORPHO_AUSD_REWARD_RATE_PER_SECOND", 0);
+const MORPHO_AUSD_PROTOCOL_FEE_BPS = envNumber("MORPHO_AUSD_PROTOCOL_FEE_BPS", MORPHO_PROTOCOL_FEE_BPS);
+const MORPHO_AUSD_ROTATION_COST_BPS = envNumber("MORPHO_AUSD_ROTATION_COST_BPS", MORPHO_ROTATION_COST_BPS);
 
 export const POOLS: PoolConfig[] = [
   {
@@ -138,7 +154,7 @@ export const POOLS: PoolConfig[] = [
     tokenIn: TOKENS.USDC,
     target: CURVANCE_TARGET_ADAPTER,
     pool: CHAIN_CONFIG.curvance.usdcMarket,
-    lpToken: CHAIN_CONFIG.curvance.receiptToken,
+    lpToken: CHAIN_CONFIG.curvance.usdcReceiptToken,
     baseApyBps: CURVANCE_BASE_APY_BPS,
     rewardTokenSymbol: "USDC",
     rewardRatePerSecond: CURVANCE_REWARD_RATE_PER_SECOND,
@@ -146,44 +162,21 @@ export const POOLS: PoolConfig[] = [
     rotationCostBps: CURVANCE_ROTATION_COST_BPS
   },
   {
-    id: "curvance-usdc-market-8ee9",
+    id: "curvance-ausd-market",
     protocol: "Curvance",
-    pair: "USDC/MON",
+    pair: "AUSD/MON",
     tier: "S",
-    enabled: envBool("CURVANCE_USDC_MARKET_8EE9_ENABLED", false),
+    enabled: envBool("CURVANCE_AUSD_ENABLED", false),
     adapterId: "curvance",
-    tokenIn: TOKENS.USDC,
-    target: CURVANCE_TARGET_ADAPTER,
-    pool: envAddress("CURVANCE_USDC_MARKET_8EE9_POOL_ADDRESS", CURVANCE_USDC_MARKET_8EE9),
-    lpToken: envAddress(
-      "CURVANCE_USDC_MARKET_8EE9_LP_TOKEN_ADDRESS",
-      envAddress("CURVANCE_USDC_MARKET_8EE9_POOL_ADDRESS", CURVANCE_USDC_MARKET_8EE9)
-    ),
-    baseApyBps: envNumber("BASE_APY_BPS_CURVANCE_USDC_8EE9", CURVANCE_BASE_APY_BPS),
-    rewardTokenSymbol: "USDC",
-    rewardRatePerSecond: CURVANCE_REWARD_RATE_PER_SECOND,
-    protocolFeeBps: CURVANCE_PROTOCOL_FEE_BPS,
-    rotationCostBps: CURVANCE_ROTATION_COST_BPS
-  },
-  {
-    id: "curvance-usdc-market-7c9d",
-    protocol: "Curvance",
-    pair: "USDC/MON",
-    tier: "S",
-    enabled: envBool("CURVANCE_USDC_MARKET_7C9D_ENABLED", false),
-    adapterId: "curvance",
-    tokenIn: TOKENS.USDC,
-    target: CURVANCE_TARGET_ADAPTER,
-    pool: envAddress("CURVANCE_USDC_MARKET_7C9D_POOL_ADDRESS", CURVANCE_USDC_MARKET_7C9D),
-    lpToken: envAddress(
-      "CURVANCE_USDC_MARKET_7C9D_LP_TOKEN_ADDRESS",
-      envAddress("CURVANCE_USDC_MARKET_7C9D_POOL_ADDRESS", CURVANCE_USDC_MARKET_7C9D)
-    ),
-    baseApyBps: envNumber("BASE_APY_BPS_CURVANCE_USDC_7C9D", CURVANCE_BASE_APY_BPS),
-    rewardTokenSymbol: "USDC",
-    rewardRatePerSecond: CURVANCE_REWARD_RATE_PER_SECOND,
-    protocolFeeBps: CURVANCE_PROTOCOL_FEE_BPS,
-    rotationCostBps: CURVANCE_ROTATION_COST_BPS
+    tokenIn: TOKENS.AUSD,
+    target: CURVANCE_AUSD_TARGET_ADAPTER,
+    pool: envAddress("CURVANCE_AUSD_POOL_ADDRESS", CHAIN_CONFIG.curvance.ausdMarket),
+    lpToken: envAddress("CURVANCE_AUSD_LP_TOKEN_ADDRESS", CHAIN_CONFIG.curvance.ausdReceiptToken),
+    baseApyBps: CURVANCE_AUSD_BASE_APY_BPS,
+    rewardTokenSymbol: "AUSD",
+    rewardRatePerSecond: CURVANCE_AUSD_REWARD_RATE_PER_SECOND,
+    protocolFeeBps: CURVANCE_AUSD_PROTOCOL_FEE_BPS,
+    rotationCostBps: CURVANCE_AUSD_ROTATION_COST_BPS
   },
   {
     id: "morpho-usdc-vault",
@@ -203,27 +196,21 @@ export const POOLS: PoolConfig[] = [
     rotationCostBps: MORPHO_ROTATION_COST_BPS
   },
   {
-    id: "morpho-usdc-vault-7899",
+    id: "morpho-ausd-vault",
     protocol: "Morpho",
-    pair: envPair("MORPHO_POOL_2_PAIR", MORPHO_DEFAULT_PAIR),
+    pair: "AUSD/MON",
     tier: "S",
-    enabled: envBool("MORPHO_POOL_2_ENABLED", false),
+    enabled: envBool("MORPHO_AUSD_ENABLED", false),
     adapterId: "morpho",
-    tokenIn: envAddress("MORPHO_POOL_2_TOKEN_IN_ADDRESS", MORPHO_TOKEN_IN_ADDRESS),
-    target: envAddress("MORPHO_POOL_2_TARGET_ADAPTER_ADDRESS", MORPHO_TARGET_ADAPTER_ADDRESS),
-    pool: envAddress("MORPHO_POOL_2_ADDRESS"),
-    lpToken: envAddress(
-      "MORPHO_POOL_2_LP_TOKEN_ADDRESS",
-      envAddress("MORPHO_POOL_2_ADDRESS")
-    ),
-    baseApyBps: envNumber("BASE_APY_BPS_MORPHO_POOL_2", MORPHO_BASE_APY_BPS),
-    rewardTokenSymbol: envString("MORPHO_POOL_2_REWARD_TOKEN_SYMBOL", MORPHO_REWARD_TOKEN_SYMBOL),
-    rewardRatePerSecond: envNumber(
-      "MORPHO_POOL_2_REWARD_RATE_PER_SECOND",
-      MORPHO_REWARD_RATE_PER_SECOND
-    ),
-    protocolFeeBps: envNumber("MORPHO_POOL_2_PROTOCOL_FEE_BPS", MORPHO_PROTOCOL_FEE_BPS),
-    rotationCostBps: envNumber("MORPHO_POOL_2_ROTATION_COST_BPS", MORPHO_ROTATION_COST_BPS)
+    tokenIn: TOKENS.AUSD,
+    target: MORPHO_AUSD_TARGET_ADAPTER_ADDRESS,
+    pool: envAddress("MORPHO_AUSD_POOL_ADDRESS"),
+    lpToken: envAddress("MORPHO_AUSD_LP_TOKEN_ADDRESS", envAddress("MORPHO_AUSD_POOL_ADDRESS")),
+    baseApyBps: MORPHO_AUSD_BASE_APY_BPS,
+    rewardTokenSymbol: MORPHO_AUSD_REWARD_TOKEN_SYMBOL,
+    rewardRatePerSecond: MORPHO_AUSD_REWARD_RATE_PER_SECOND,
+    protocolFeeBps: MORPHO_AUSD_PROTOCOL_FEE_BPS,
+    rotationCostBps: MORPHO_AUSD_ROTATION_COST_BPS
   },
   {
     id: "gearbox-usdc-vault",
