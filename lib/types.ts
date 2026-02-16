@@ -39,6 +39,17 @@ export interface Rotation {
   pair: Pair;
 }
 
+export interface AgentTransaction {
+  id: string;
+  timestamp: string;
+  action: "ENTER" | "EXIT_TO_USDC";
+  fromPool: string;
+  toPool: string;
+  reason: string;
+  txHash: string | null;
+  pair: Pair;
+}
+
 export interface GuardStatus {
   depegGuard: {
     threshold: number;
@@ -83,6 +94,7 @@ export interface DashboardData {
   currentPosition: Position;
   apySnapshots: Snapshot[];
   rotations: Rotation[];
+  transactions: AgentTransaction[];
   guardStatus: GuardStatus;
   tweets: Tweet[];
   nextTweetPreview: Tweet;

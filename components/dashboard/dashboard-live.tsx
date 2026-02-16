@@ -10,6 +10,7 @@ import { AgentHowItWorksCard } from "@/components/dashboard/agent-how-it-works-c
 import { RiskGuardsCard } from "@/components/dashboard/risk-guards-card";
 import { ApyChart } from "@/components/dashboard/apy-chart";
 import { RotationsTable } from "@/components/dashboard/rotations-table";
+import { TransactionsTable } from "@/components/dashboard/transactions-table";
 import { TweetFeed } from "@/components/dashboard/tweet-feed";
 import { Badge } from "@/components/ui/badge";
 import type { DashboardData } from "@/lib/types";
@@ -168,9 +169,15 @@ export function DashboardLive({
             <ApyChart snapshots={data.apySnapshots} />
 
             <div className="grid gap-6 xl:grid-cols-5">
-              <div className="xl:col-span-3">
+              <div className="space-y-6 xl:col-span-3">
                 <RotationsTable
                   rotations={data.rotations}
+                  explorerTxBaseUrl={data.explorerTxBaseUrl}
+                  isDryRun={data.isDryRun}
+                  liveModeArmed={data.liveModeArmed}
+                />
+                <TransactionsTable
+                  transactions={data.transactions}
                   explorerTxBaseUrl={data.explorerTxBaseUrl}
                   isDryRun={data.isDryRun}
                   liveModeArmed={data.liveModeArmed}

@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createPublicClient, erc20Abi, formatUnits, http, isAddress } from "viem";
 import type {
+  AgentTransaction,
   AgentStatus,
   DashboardData,
   GuardStatus,
@@ -136,7 +137,12 @@ export async function getDashboardData(): Promise<DashboardData> {
     "EXPLORER_TX_BASE_URL",
     DEFAULT_EXPLORER_TX_BASE_URL
   );
-  const rotations = mapRotations(state, poolMetaById, snapshotsByPool, isDryRun);
+  const { rotations, transactions } = mapDecisionHistory(
+    state,
+    poolMetaById,
+    snapshotsByPool,
+    isDryRun
+  );
   const availablePools = mapAvailablePools(poolMetaById);
   const latestDecisionRow = mapLatestDecision(latestDecision);
   const vaultUsdcBalance = await readVaultUsdcBalance({
@@ -153,6 +159,7 @@ export async function getDashboardData(): Promise<DashboardData> {
     currentPosition,
     apySnapshots,
     rotations,
+    transactions,
     guardStatus,
     tweets,
     nextTweetPreview,
@@ -471,28 +478,38 @@ function mapApySnapshots(snapshots: BotSnapshot[], activePoolId: string | null):
     }));
 }
 
-function mapRotations(
+function mapDecisionHistory(
   state: BotState,
   poolMetaById: Map<string, { pair: string; protocol: string }>,
   snapshotsByPool: Map<string, BotSnapshot[]>,
   isDryRun: boolean
-): Rotation[] {
+): { rotations: Rotation[]; transactions: AgentTransaction[] } {
   const actionToTweetType: Record<Exclude<DecisionAction, "HOLD">, BotTweetType> = {
     ENTER: "DEPLOYED",
     ROTATE: "ROTATED",
     EXIT_TO_USDC: "EMERGENCY_EXIT"
   };
 
-  const rotationDecisions = state.decisions.filter(
+  const actionableDecisions = state.decisions.filter(
     (decision) => decision.action !== "HOLD"
   ) as Array<Omit<BotDecision, "action"> & { action: Exclude<DecisionAction, "HOLD"> }>;
 
   const tweetPool = state.tweets.filter((tweet) => Boolean(tweet.txHash));
   const consumedTweetIndexes = new Set<number>();
-  const rows: Rotation[] = [];
+  const rows: Array<{
+    timestamp: string;
+    action: Exclude<DecisionAction, "HOLD">;
+    fromPool: string;
+    toPool: string;
+    oldApy: number;
+    newApy: number;
+    reason: string;
+    txHash: string | null;
+    pair: string;
+  }> = [];
 
   let currentPoolId: string | null = null;
-  for (const decision of rotationDecisions) {
+  for (const decision of actionableDecisions) {
     const fromPoolId = currentPoolId;
     const toPoolId = decision.action === "EXIT_TO_USDC" ? null : decision.chosenPoolId;
 
@@ -509,8 +526,8 @@ function mapRotations(
       txHash && looksSyntheticTxHash(txHash) ? null : txHash;
 
     rows.push({
-      id: `rot-${decision.timestamp}-${rows.length + 1}`,
       timestamp: toIsoString(decision.timestamp),
+      action: decision.action,
       fromPool: fromPoolId
         ? poolLabel(fromPoolId, poolMetaById)
         : decision.action === "ENTER"
@@ -527,7 +544,42 @@ function mapRotations(
     currentPoolId = toPoolId;
   }
 
-  return rows.sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp));
+  const sortedRows = rows.sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp));
+  const rotations: Rotation[] = [];
+  const transactions: AgentTransaction[] = [];
+
+  for (const row of sortedRows) {
+    if (row.action === "ROTATE") {
+      rotations.push({
+        id: `rot-${row.timestamp}-${rotations.length + 1}`,
+        timestamp: row.timestamp,
+        fromPool: row.fromPool,
+        toPool: row.toPool,
+        oldApy: row.oldApy,
+        newApy: row.newApy,
+        reason: row.reason,
+        txHash: row.txHash,
+        pair: row.pair
+      });
+      continue;
+    }
+
+    transactions.push({
+      id: `txn-${row.timestamp}-${transactions.length + 1}`,
+      timestamp: row.timestamp,
+      action: row.action,
+      fromPool: row.fromPool,
+      toPool: row.toPool,
+      reason: row.reason,
+      txHash: row.txHash,
+      pair: row.pair
+    });
+  }
+
+  return {
+    rotations,
+    transactions
+  };
 }
 
 function mapGuardStatus(

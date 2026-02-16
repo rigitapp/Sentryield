@@ -7,6 +7,7 @@
     "build": "tsc -p tsconfig.json",
     "dev": "tsx src/index.ts",
     "dev:railway": "tsx src/railway.ts",
+    "apy:base:live": "tsx src/print-base-apy-env.ts",
     "preflight": "tsx src/preflight.ts",
     "migration:report": "tsx src/migration-report.ts",
     "reset-state": "tsx src/reset-state.ts",
