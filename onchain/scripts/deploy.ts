@@ -29,6 +29,12 @@ function requireEnv(name: string): string {
   return value;
 }
 
+function envBool(name: string, fallback: boolean): boolean {
+  const raw = process.env[name]?.trim();
+  if (!raw) return fallback;
+  return raw.toLowerCase() === "true";
+}
+
 function parseAddressList(raw?: string): string[] {
   if (!raw) return [];
   return raw
@@ -50,10 +56,21 @@ async function main(): Promise<void> {
   const owner = requireEnv("OWNER_ADDRESS");
   const executor = requireEnv("EXECUTOR_ADDRESS");
   const guardian = process.env.GUARDIAN_ADDRESS ?? ethers.ZeroAddress;
-  const adapterAddress = requireEnv("CURVANCE_TARGET_ADAPTER_ADDRESS");
+  const bootstrapAllowlist = envBool("DEPLOY_BOOTSTRAP_ALLOWLIST", false);
+  const adapterAddressRaw = process.env.CURVANCE_TARGET_ADAPTER_ADDRESS?.trim() ?? "";
+  if (bootstrapAllowlist && !adapterAddressRaw) {
+    throw new Error(
+      "CURVANCE_TARGET_ADAPTER_ADDRESS is required when DEPLOY_BOOTSTRAP_ALLOWLIST=true."
+    );
+  }
+  const adapterAddress = adapterAddressRaw ? ethers.getAddress(adapterAddressRaw) : "";
   const movementCapBps = Number(process.env.MOVEMENT_CAP_BPS ?? "8000");
   const dailyMovementCapBps = Number(process.env.DAILY_MOVEMENT_CAP_BPS ?? "0");
   const maxDeadlineDelay = Number(process.env.MAX_DEADLINE_DELAY_SECONDS ?? "1800");
+  const depositToken = ethers.getAddress(
+    process.env.VAULT_DEPLOY_DEPOSIT_TOKEN_ADDRESS?.trim() ?? curvanceConfig.tokens.USDC
+  );
+  const depositTokenSymbol = (process.env.VAULT_DEPLOY_DEPOSIT_TOKEN_SYMBOL ?? "").trim();
 
   const factory = await ethers.getContractFactory("TreasuryVault");
   const vault = await factory.deploy(
@@ -62,12 +79,21 @@ async function main(): Promise<void> {
     guardian,
     movementCapBps,
     maxDeadlineDelay,
-    curvanceConfig.tokens.USDC
+    depositToken
   );
   await vault.waitForDeployment();
 
   const vaultAddress = await vault.getAddress();
-  console.log(`TreasuryVault deployed at: ${vaultAddress}`);
+  console.log(
+    `TreasuryVault deployed at: ${vaultAddress} | depositToken=${depositToken}${depositTokenSymbol ? ` (${depositTokenSymbol})` : ""}`
+  );
+
+  if (!bootstrapAllowlist) {
+    console.log(
+      "DEPLOY_BOOTSTRAP_ALLOWLIST=false, skipping allowlist bootstrap. Use configure scripts after deployment."
+    );
+    return;
+  }
 
   const [deployerSigner] = await ethers.getSigners();
   const deployerAddress = await deployerSigner.getAddress();

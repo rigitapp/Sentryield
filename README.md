@@ -1,11 +1,12 @@
 # Sentryield v1 Go-Live (Monad + Curvance)
 
-Sentryield v1 is now wired for a **single live strategy**:
+Sentryield v1 is now wired around a **single deposit token per vault** and supports
+multi-protocol pool routing per token:
 
-- **Capital:** one treasury Vault
-- **Protocol:** Curvance only
-- **Market:** Curvance USDC market only
-- **Strategy label:** `USDC/MON` (reporting label), but funds are supplied as USDC
+- **Capital:** one `TreasuryVault` per deposit token (USDC, AUSD, shMON, kMON, ...)
+- **Protocols:** Curvance, Morpho, Gearbox, TownSquare, Neverland (env-gated)
+- **Execution model:** one bot runtime per vault/deposit token
+- **Strategy labels:** pair labels are reporting metadata; execution uses each pool `tokenIn`
 
 ## Sources used for live interface/address selection
 
@@ -42,10 +43,10 @@ Both files intentionally contain identical address payload:
   - optional global rolling 24h movement budget:
     - `dailyMovementCapBps` (0 disables)
     - tracked via `dailyMovementWindowStart` and `dailyMovementBpsUsed`
-  - user wallet flow for USDC:
+  - user wallet flow for the configured vault deposit token:
     - `depositUsdc(uint256)` (share-accounted deposit)
-    - `withdrawToWallet(uint256,address)` (redeem USDC back to wallet)
-    - withdrawals are blocked while LP positions are open; first deposit requires empty vault USDC
+    - `withdrawToWallet(uint256,address)` (redeem deposit token back to wallet)
+    - withdrawals are blocked while LP positions are open; first deposit requires an empty vault balance for that token
 - Tests updated and expanded:
   - rails: token/target/pool allowlist, pause, per-tx cap, daily cap, deadline, slippage, roles
   - call path: enter / exit / rotate
@@ -61,7 +62,8 @@ Both files intentionally contain identical address payload:
 
 ### Bot
 
-- Bot config now reads the Curvance mainnet JSON file and uses one pool only.
+- Bot config reads the Curvance/Monad chain config JSON and supports env-driven
+  pools across multiple protocols/pairs (disabled by default).
 - Curvance adapter added: `bot/src/adapters/curvance.adapter.ts`
 - Executor correctness fixes:
   - rotate enter `minOut` is now derived from expected exit proceeds (no `minOut=1`)
@@ -76,9 +78,16 @@ Both files intentionally contain identical address payload:
   - scanner/adapters fail closed if onchain reads or quotes fail
   - price inputs come from live CoinGecko fetches (`STABLE_PRICE_SYMBOLS`, `COINGECKO_ID_*`)
 - Multi-protocol expansion:
-  - added ERC4626 adapter path for `morpho`, `gearbox`, `townsquare`, `neverland`
+  - added adapter paths:
+    - ERC4626 for `morpho`, `gearbox`, `townsquare`
+    - Aave-style pool adapter for `neverland`
   - pools are env-driven and **disabled by default**
   - preflight checks only enabled pools
+  - base APY auto-update:
+    - Curvance via onchain protocol reader
+    - Morpho via GraphQL vault API
+    - ERC4626 protocols (Gearbox/TownSquare) via onchain share-price lookback
+    - Neverland via reserve `currentLiquidityRate` (onchain pool read)
 
 ## Go-live steps
 
@@ -86,6 +95,8 @@ Both files intentionally contain identical address payload:
 2. Deploy Curvance adapter contract.
 3. Set `CURVANCE_TARGET_ADAPTER_ADDRESS` in `.env`.
 4. Deploy Vault via `onchain/scripts/deploy.ts`.
+   - for non-USDC vaults, set `VAULT_DEPLOY_DEPOSIT_TOKEN_ADDRESS` (and optional `VAULT_DEPLOY_DEPOSIT_TOKEN_SYMBOL`) before `npm run deploy:monad`
+   - recommended: keep `DEPLOY_BOOTSTRAP_ALLOWLIST=false` and configure allowlists via owner/multisig scripts
 5. Verify allowlists on Vault:
    - token allowlist includes USDC + receipt token
    - target allowlist includes adapter + Curvance market
@@ -199,10 +210,20 @@ npm run migration:report
    - `TARGET_ADAPTER_CONTRACT=<ProtocolTargetAdapter> npm run deploy:adapter:monad`
 2. Set protocol env vars in bot runtime (addresses + APY params), keep `<PROTOCOL>_ENABLED=false`.
 3. Add adapter/pool/pool-target addresses to vault allowlists (owner/multisig flow).
+   - allowlist scripts read protocol env keys (`*_TOKEN_IN_ADDRESS`, `*_LP_TOKEN_ADDRESS`, `*_TARGET_ADAPTER_ADDRESS`, `*_POOL_ADDRESS`)
+   - use `ALLOWLIST_INCLUDE_CURVANCE_DEFAULTS=false` for non-Curvance-only vault profiles if desired
+   - keep least-privilege by default (`ALLOWLIST_INCLUDE_DISABLED_POOL_CONFIGS=false`) and use `ALLOWLIST_POOL_KEYS` to pre-allowlist specific disabled pools
+   - for strict per-profile plans, set `ALLOWLIST_ONLY_POOL_KEYS=true`
+   - optional batch generator for token vaults: `cd onchain && npm run prepare:configure:vault:rollout:monad`
 4. Run `cd bot && npm run preflight` and confirm no FAILs.
 5. Set `<PROTOCOL>_ENABLED=true` for one protocol only.
 6. Keep `LIVE_MODE_ARMED=false` for first cycle validation.
 7. Verify snapshots/decision quality, then arm live mode.
+
+Known Monad discovery (current):
+- Neverland pool `0x80F00661b13CC5F6ccd3885bE7b4C9c67545D585` lists reserves including `USDC`, `AUSD`, `shMON`; `kMON` was not detected in reserve list.
+- Gearbox Monad pool addresses remain unset until verified deployments are available.
+- Vault-per-token rollout runbook: `docs/vault-rollout-checklist.md`.
 
 ## True Live Test Runbook (UI deposit + broadcast)
 
@@ -217,21 +238,26 @@ npm run migration:report
 4. From UI:
    - connect wallet (Injected / Coinbase / WalletConnect)
    - switch to Monad chain
-   - use **Deposit USDC To Vault** card
-   - if prompted, approve USDC then confirm deposit
-   - if LP is active, UI now auto-queues **Exit to USDC** and continues deposit/withdraw when parked
+  - use **Deposit <vault token> To Vault** card
+  - if prompted, approve the vault token then confirm deposit
+  - if LP is active, UI auto-queues exit and continues deposit/withdraw when parked
 5. Optional clean-cycle reset (backs up old state first):
    - `cd bot && npm run reset-state`
-6. Re-run preflight and confirm `vault.usdc_balance` is non-zero.
+6. Re-run preflight and confirm `vault.deposit_token_balance` is non-zero.
 7. Run one controlled armed cycle (no permanent `.env` edits needed):
    - `cd bot && npm run live-broadcast-once`
 8. Verify real transaction hash on Monadscan and in dashboard history.
+9. Optional dashboard aggregate metrics:
+   - set `VAULT_ADDRESSES=<comma-separated vault addresses>`
+   - UI Agent Activity card shows `Total Deposits` and `Liquidity / TVL` in USD across those vaults.
 
 ## Vault upgrade note (withdraw UX)
 
-- The upgraded `TreasuryVault` constructor now includes a 6th argument: `depositToken` (USDC).
+- The upgraded `TreasuryVault` constructor now includes a 6th argument: `depositToken` (your vault asset).
 - If you are on an older vault deployment, redeploy vault + update `VAULT_ADDRESS` before using wallet withdrawals.
 - Legacy vaults still support direct transfer deposits, but redeem-to-wallet is unavailable until upgrade.
+- Single-vault limitation: one `TreasuryVault` can only support one `depositToken` at a time. To run USDC + AUSD + shMON + kMON simultaneously, deploy one vault per token.
+- Recommended production architecture today: keep one vault + one bot runtime per token; treat a true multi-asset vault as a separate v2/v3 contract project.
 - Full blue/green migration guide: `docs/migration-playbook.md`.
 - V3 design for true anytime liquidity UX: `docs/vault-v3-anytime-liquidity.md`.
 
@@ -251,6 +277,11 @@ npm run migration:report
 - For hosted UI + separate bot process, point Next to the bot status endpoint:
   - `BOT_STATE_URL=https://<your-bot-domain>/state`
   - if protected: `BOT_STATE_AUTH_TOKEN=<same secret as BOT_STATUS_AUTH_TOKEN>`
+- Single-project multi-token dashboards are supported:
+  - `/usdc` reads `BOT_STATE_URL_USDC` (+ optional `BOT_STATE_AUTH_TOKEN_USDC`)
+  - `/ausd` reads `BOT_STATE_URL_AUSD` (+ optional `BOT_STATE_AUTH_TOKEN_AUSD`)
+  - `/shmon` reads `BOT_STATE_URL_SHMON` (+ optional `BOT_STATE_AUTH_TOKEN_SHMON`)
+  - each route falls back to `BOT_STATE_URL` / `BOT_STATE_AUTH_TOKEN` when profile-specific vars are unset
 - Next dashboard accepts remote state from `/state` only when `healthy=true` and `ready=true`.
 - `NEXT_PUBLIC_*` values (including `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`) are embedded at build time. After changing them in Vercel, you must redeploy.
 - WalletConnect can still fail if the project settings do not allow your deployed domain; confirm your Vercel domain is approved in WalletConnect Cloud.
@@ -269,6 +300,7 @@ Deploy the bot as a separate Railway service (Vercel should host UI only).
    - if Railway still selects pnpm, clear the builder cache and redeploy
 4. Configure bot env vars on Railway:
    - required runtime: `MONAD_RPC_URL`, `MONAD_CHAIN_ID`, `VAULT_ADDRESS`, `CURVANCE_TARGET_ADAPTER_ADDRESS`, `BOT_EXECUTOR_PRIVATE_KEY`
+   - for non-USDC vault runtimes, set `CURVANCE_ENABLED=false` unless that runtime is intentionally using the USDC Curvance market
    - mode flags: `DRY_RUN=false`, `LIVE_MODE_ARMED=<true|false>`
    - controls: `SCAN_INTERVAL_SECONDS`, `DEFAULT_TRADE_AMOUNT_RAW`, `TX_DEADLINE_SECONDS`
    - status endpoints: `BOT_STATUS_SERVER_ENABLED=true`, `BOT_STATUS_SERVER_REQUIRED=true`, optional `BOT_STATUS_AUTH_TOKEN=<secret>`
@@ -276,7 +308,11 @@ Deploy the bot as a separate Railway service (Vercel should host UI only).
    - `https://<railway-domain>/healthz` => 200
    - `https://<railway-domain>/readyz` => 200 (after first successful tick)
    - `https://<railway-domain>/state` => includes `{ healthy: true, ready: true, runtime, state }`
-6. Point Vercel UI to Railway bot:
-   - `BOT_STATE_URL=https://<railway-domain>/state`
-   - if protected: `BOT_STATE_AUTH_TOKEN=<same secret>`
-7. Redeploy Vercel so dashboard uses live Railway bot state.
+6. Point Vercel UI to Railway bot(s):
+   - default fallback: `BOT_STATE_URL=https://<railway-domain>/state`
+   - per-route endpoints in one Vercel project:
+     - `BOT_STATE_URL_USDC=https://<usdc-railway-domain>/state`
+     - `BOT_STATE_URL_AUSD=https://<ausd-railway-domain>/state`
+     - `BOT_STATE_URL_SHMON=https://<shmon-railway-domain>/state`
+   - if protected, set matching auth vars (`BOT_STATE_AUTH_TOKEN_*`) with each service's `BOT_STATUS_AUTH_TOKEN`
+7. Redeploy Vercel so dashboard routes use live Railway bot state.

@@ -1,0 +1,53 @@
+{
+  "chainId": 143,
+  "meta": {
+    "name": "Vault SHMON - Allowlists Batch",
+    "description": "Multisig batch to configure allowlists on TreasuryVault (tokens + targets + pool). All calls go to the vault, value=0.",
+    "vault": "0x678B754BA147E6BCD8c2a7a9B250C281Edf4d239",
+    "adapter": ""
+  },
+  "transactions": [
+    {
+      "to": "0x678B754BA147E6BCD8c2a7a9B250C281Edf4d239",
+      "value": "0",
+      "data": "0x00571014000000000000000000000000c64d73bb8748c6fa7487ace2d0d945b6fbb2ecde0000000000000000000000000000000000000000000000000000000000000001",
+      "operation": "CALL",
+      "note": "setTokenAllowlist(0xC64d73Bb8748C6fA7487ace2D0d945B6fBb2EcDe, true)"
+    },
+    {
+      "to": "0x678B754BA147E6BCD8c2a7a9B250C281Edf4d239",
+      "value": "0",
+      "data": "0x005710140000000000000000000000001b68626dca36c7fe922fd2d55e4f631d962de19c0000000000000000000000000000000000000000000000000000000000000001",
+      "operation": "CALL",
+      "note": "setTokenAllowlist(0x1B68626dCa36c7fE922fD2d55E4f631d962dE19c, true)"
+    },
+    {
+      "to": "0x678B754BA147E6BCD8c2a7a9B250C281Edf4d239",
+      "value": "0",
+      "data": "0xb25d6f5200000000000000000000000097f8609623062fdcd761e2cdda08345784348ca00000000000000000000000000000000000000000000000000000000000000001",
+      "operation": "CALL",
+      "note": "setTargetAllowlist(0x97f8609623062fdcd761E2CdDA08345784348ca0, true)"
+    },
+    {
+      "to": "0x678B754BA147E6BCD8c2a7a9B250C281Edf4d239",
+      "value": "0",
+      "data": "0xb25d6f52000000000000000000000000b4934fb3af7b9c32e2779b126dd640425f7bfbf90000000000000000000000000000000000000000000000000000000000000001",
+      "operation": "CALL",
+      "note": "setTargetAllowlist(0xB4934FB3AF7b9c32e2779B126dd640425F7BFBF9, true)"
+    },
+    {
+      "to": "0x678B754BA147E6BCD8c2a7a9B250C281Edf4d239",
+      "value": "0",
+      "data": "0xb25d6f5200000000000000000000000080f00661b13cc5f6ccd3885be7b4c9c67545d5850000000000000000000000000000000000000000000000000000000000000001",
+      "operation": "CALL",
+      "note": "setTargetAllowlist(0x80F00661b13CC5F6ccd3885bE7b4C9c67545D585, true)"
+    },
+    {
+      "to": "0x678B754BA147E6BCD8c2a7a9B250C281Edf4d239",
+      "value": "0",
+      "data": "0x0cd3d1c600000000000000000000000080f00661b13cc5f6ccd3885be7b4c9c67545d5850000000000000000000000000000000000000000000000000000000000000001",
+      "operation": "CALL",
+      "note": "setPoolAllowlist(0x80F00661b13CC5F6ccd3885bE7b4C9c67545D585, true)"
+    }
+  ]
+}

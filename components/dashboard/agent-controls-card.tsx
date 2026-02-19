@@ -31,6 +31,7 @@ interface OperatorState {
 interface AgentControlsCardProps {
   availablePools: PoolOption[];
   currentPosition: Position;
+  vaultTokenSymbol: string;
 }
 
 function formatTime(iso: string): string {
@@ -44,7 +45,8 @@ function formatTime(iso: string): string {
 
 export function AgentControlsCard({
   availablePools,
-  currentPosition
+  currentPosition,
+  vaultTokenSymbol
 }: AgentControlsCardProps) {
   const [state, setState] = useState<OperatorState | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -117,7 +119,7 @@ export function AgentControlsCard({
   const pendingActionLabel = state?.pendingAction
     ? state.pendingAction.type === "ROTATE"
       ? `Rotate queued: ${state.pendingAction.poolId ?? "unknown"}`
-      : "Exit to USDC queued"
+      : `Exit to ${vaultTokenSymbol} queued`
     : "No queued manual action";
 
   return (
@@ -135,7 +137,7 @@ export function AgentControlsCard({
           <p>Automatic loops have no mandatory 24h hold wait.</p>
           <p className="mt-1">
             Manual actions can override automation. Vault v1 does not support direct wallet
-            withdrawals; exits park funds in vault USDC.
+            withdrawals; exits park funds in vault {vaultTokenSymbol}.
           </p>
         </div>
 
@@ -158,7 +160,7 @@ export function AgentControlsCard({
             disabled={isSubmitting}
           >
             <LogOut className="h-3.5 w-3.5" />
-            Exit to USDC
+            Exit to {vaultTokenSymbol}
           </Button>
         </div>
 

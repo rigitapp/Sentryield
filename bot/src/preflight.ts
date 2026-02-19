@@ -8,8 +8,8 @@ import {
   stringToHex
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { POOLS, POLICY, RUNTIME, TOKENS } from "./config.js";
-import type { Address } from "./types.js";
+import { POOLS, POLICY, RUNTIME } from "./config.js";
+import type { Address, PoolConfig } from "./types.js";
 
 type CheckStatus = "PASS" | "WARN" | "FAIL";
 
@@ -36,6 +36,13 @@ const VAULT_ABI = parseAbi([
 
 const ERC20_ABI = parseAbi([
   "function balanceOf(address account) view returns (uint256)"
+]);
+const POOL_QUOTE_ABI = parseAbi([
+  "function previewDeposit(uint256 assets) view returns (uint256 shares)",
+  "function previewRedeem(uint256 shares) view returns (uint256 assets)"
+]);
+const AAVE_POOL_ABI = parseAbi([
+  "function getReserveData(address asset) view returns ((uint256 configuration,uint128 liquidityIndex,uint128 currentLiquidityRate,uint128 variableBorrowIndex,uint128 currentVariableBorrowRate,uint128 currentStableBorrowRate,uint40 lastUpdateTimestamp,uint16 id,address aTokenAddress,address stableDebtTokenAddress,address variableDebtTokenAddress,address interestRateStrategyAddress,uint128 accruedToTreasury,uint128 unbacked,uint128 isolationModeTotalDebt) data)"
 ]);
 
 function push(
@@ -180,6 +187,19 @@ async function main(): Promise<void> {
 
   const activePools = POOLS.filter((pool) => pool.enabled);
   for (const pool of activePools) {
+    const compatible =
+      getAddress(pool.tokenIn) === getAddress(RUNTIME.vaultDepositToken);
+    push(
+      results,
+      `pool.${pool.id}.deposit_token_match`,
+      compatible ? "PASS" : "FAIL",
+      compatible
+        ? `${pool.id} tokenIn matches vault deposit token.`
+        : `${pool.id} tokenIn (${pool.tokenIn}) does not match VAULT_DEPOSIT_TOKEN_ADDRESS (${RUNTIME.vaultDepositToken}).`
+    );
+  }
+
+  for (const pool of activePools) {
     await checkCodeExists(
       results,
       client,
@@ -208,6 +228,7 @@ async function main(): Promise<void> {
       pool.lpToken,
       `${pool.id} lpToken`
     );
+    await checkPoolQuoteCompatibility(results, client, pool);
   }
 
   try {
@@ -365,24 +386,24 @@ async function main(): Promise<void> {
   }
 
   try {
-    const usdcBalance = await client.readContract({
-      address: TOKENS.USDC,
+    const depositTokenBalance = await client.readContract({
+      address: RUNTIME.vaultDepositToken,
       abi: ERC20_ABI,
       functionName: "balanceOf",
       args: [RUNTIME.vaultAddress]
     });
     push(
       results,
-      "vault.usdc_balance",
-      usdcBalance > 0n ? "PASS" : "WARN",
-      `Vault USDC balance: ${usdcBalance}`
+      "vault.deposit_token_balance",
+      depositTokenBalance > 0n ? "PASS" : "WARN",
+      `Vault deposit token balance (${RUNTIME.vaultDepositToken}): ${depositTokenBalance}`
     );
   } catch (error) {
     push(
       results,
-      "vault.usdc_balance",
+      "vault.deposit_token_balance",
       "WARN",
-      `Failed to read USDC balance: ${toErrorMessage(error)}`
+      `Failed to read deposit token balance (${RUNTIME.vaultDepositToken}): ${toErrorMessage(error)}`
     );
   }
 
@@ -419,6 +440,71 @@ async function checkCodeExists(
     );
   } catch (error) {
     push(results, id, "FAIL", `${label} code check failed: ${toErrorMessage(error)}`);
+  }
+}
+
+async function checkPoolQuoteCompatibility(
+  results: CheckResult[],
+  client: ReturnType<typeof createPublicClient>,
+  pool: PoolConfig
+): Promise<void> {
+  if (pool.adapterId === "neverland") {
+    try {
+      const reserveData = (await client.readContract({
+        address: pool.pool,
+        abi: AAVE_POOL_ABI,
+        functionName: "getReserveData",
+        args: [pool.tokenIn]
+      })) as {
+        aTokenAddress: Address;
+      };
+      const reserveLpToken = reserveData.aTokenAddress;
+      const matches = getAddress(reserveLpToken) === getAddress(pool.lpToken);
+      push(
+        results,
+        `pool.${pool.id}.quote_surface`,
+        matches ? "PASS" : "FAIL",
+        matches
+          ? "Neverland reserve surface is reachable and lpToken matches reserve aToken."
+          : `Neverland lpToken mismatch. configured=${pool.lpToken}, reserve=${reserveLpToken}`
+      );
+    } catch (error) {
+      push(
+        results,
+        `pool.${pool.id}.quote_surface`,
+        "FAIL",
+        `Neverland reserve surface check failed: ${toErrorMessage(error)}`
+      );
+    }
+    return;
+  }
+
+  try {
+    const quotedShares = await client.readContract({
+      address: pool.pool,
+      abi: POOL_QUOTE_ABI,
+      functionName: "previewDeposit",
+      args: [1n]
+    });
+    await client.readContract({
+      address: pool.pool,
+      abi: POOL_QUOTE_ABI,
+      functionName: "previewRedeem",
+      args: [quotedShares > 0n ? quotedShares : 1n]
+    });
+    push(
+      results,
+      `pool.${pool.id}.quote_surface`,
+      "PASS",
+      "Pool exposes previewDeposit/previewRedeem quote surface."
+    );
+  } catch (error) {
+    push(
+      results,
+      `pool.${pool.id}.quote_surface`,
+      "FAIL",
+      `Pool quote surface check failed: ${toErrorMessage(error)}`
+    );
   }
 }
 

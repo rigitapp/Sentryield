@@ -1,0 +1,25 @@
+{
+  "chainId": 143,
+  "meta": {
+    "name": "Vault AUSD - Topup Batch",
+    "description": "Multisig batch to configure allowlists on TreasuryVault (targets). All calls go to the vault, value=0.",
+    "vault": "0x9CF735807D43b7761Cec9eF3D7890bCd10962365",
+    "adapter": ""
+  },
+  "transactions": [
+    {
+      "to": "0x9CF735807D43b7761Cec9eF3D7890bCd10962365",
+      "value": "0",
+      "data": "0xb25d6f520000000000000000000000006e182eb501800c555bd5e662e6d350d627f504d80000000000000000000000000000000000000000000000000000000000000001",
+      "operation": "CALL",
+      "note": "setTargetAllowlist(0x6E182EB501800C555bd5E662E6D350D627F504D8, true)"
+    },
+    {
+      "to": "0x9CF735807D43b7761Cec9eF3D7890bCd10962365",
+      "value": "0",
+      "data": "0xb25d6f52000000000000000000000000bc03e505ee65f9faa68a2d7e5a74452858c16d290000000000000000000000000000000000000000000000000000000000000001",
+      "operation": "CALL",
+      "note": "setTargetAllowlist(0xBC03E505EE65f9fAa68a2D7e5A74452858C16D29, true)"
+    }
+  ]
+}

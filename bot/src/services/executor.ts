@@ -40,6 +40,7 @@ const ERC20_BALANCE_ABI = parseAbi([
 
 interface ExecutorConfig {
   vaultAddress: Address;
+  vaultDepositToken: Address;
   dryRun: boolean;
   liveModeArmed: boolean;
   defaultTradeAmountRaw: bigint;
@@ -49,7 +50,6 @@ interface ExecutorConfig {
   enterOnlyMode: boolean;
   maxRotationsPerDay: number;
   cooldownSeconds: number;
-  usdcToken: Address;
 }
 
 interface ExecuteInput {
@@ -250,7 +250,7 @@ export class ExecutorService {
 
     const exitRequest = await fromAdapter.buildExitRequest({
       pool: fromPool,
-      tokenOut: this.config.usdcToken,
+      tokenOut: this.config.vaultDepositToken,
       amountIn,
       minOut: this.minOut(amountIn),
       deadline

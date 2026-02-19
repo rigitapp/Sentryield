@@ -3,7 +3,7 @@ import { getDashboardData } from "@/lib/server/dashboard-data";
 
 export const dynamic = "force-dynamic";
 
-export default async function Dashboard() {
+export default async function UsdcDashboardPage() {
   const initialData = await getDashboardData("usdc");
   const refreshIntervalMs = Number(process.env.DASHBOARD_REFRESH_MS ?? "10000");
   const safeRefreshIntervalMs =
@@ -19,3 +19,4 @@ export default async function Dashboard() {
     />
   );
 }
+

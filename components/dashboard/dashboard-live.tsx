@@ -18,6 +18,7 @@ import type { DashboardData } from "@/lib/types";
 interface DashboardLiveProps {
   initialData: DashboardData;
   refreshIntervalMs?: number;
+  apiPath?: string;
 }
 
 const DEFAULT_REFRESH_INTERVAL_MS = 10_000;
@@ -44,7 +45,8 @@ function sourceBadgeClass(source: DashboardData["botStateSource"]): string {
 
 export function DashboardLive({
   initialData,
-  refreshIntervalMs = DEFAULT_REFRESH_INTERVAL_MS
+  refreshIntervalMs = DEFAULT_REFRESH_INTERVAL_MS,
+  apiPath = "/api/dashboard"
 }: DashboardLiveProps) {
   const [data, setData] = useState<DashboardData>(initialData);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -56,7 +58,7 @@ export function DashboardLive({
     const refresh = async () => {
       try {
         setIsRefreshing(true);
-        const response = await fetch("/api/dashboard", { cache: "no-store" });
+        const response = await fetch(apiPath, { cache: "no-store" });
         if (!response.ok) {
           throw new Error(`Dashboard refresh failed: ${response.status}`);
         }
@@ -91,7 +93,7 @@ export function DashboardLive({
       cancelled = true;
       clearInterval(timer);
     };
-  }, [refreshIntervalMs]);
+  }, [apiPath, refreshIntervalMs]);
 
   const lastSyncLabel = useMemo(() => {
     return formatTimestamp(data.updatedAt);
@@ -146,20 +148,24 @@ export function DashboardLive({
           <div className="space-y-6 lg:col-span-4">
             <CurrentPositionCard position={data.currentPosition} />
             <AgentActivityCard
-              vaultUsdcBalance={data.vaultUsdcBalance}
+              totalDepositsUsd={data.totalDepositsUsd}
+              totalLiquidityUsd={data.totalLiquidityUsd}
+              totalVaultCount={data.totalVaultCount}
               latestDecision={data.latestDecision}
             />
             <DepositUsdcCard
               chainId={data.chainId}
               vaultAddress={data.vaultAddress}
-              usdcTokenAddress={data.usdcTokenAddress}
-              usdcDecimals={data.usdcDecimals}
+              tokenAddress={data.vaultTokenAddress}
+              tokenDecimals={data.vaultTokenDecimals}
+              tokenSymbol={data.vaultTokenSymbol}
               explorerTxBaseUrl={data.explorerTxBaseUrl}
               liveModeArmed={data.liveModeArmed}
             />
             <AgentControlsCard
               availablePools={data.availablePools}
               currentPosition={data.currentPosition}
+              vaultTokenSymbol={data.vaultTokenSymbol}
             />
             <RiskGuardsCard guardStatus={data.guardStatus} />
             <AgentHowItWorksCard />

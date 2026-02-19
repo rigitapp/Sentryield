@@ -19,8 +19,9 @@ import { Badge } from "@/components/ui/badge";
 interface DepositUsdcCardProps {
   chainId: number;
   vaultAddress: string;
-  usdcTokenAddress: string;
-  usdcDecimals: number;
+  tokenAddress: string;
+  tokenDecimals: number;
+  tokenSymbol: string;
   explorerTxBaseUrl: string;
   liveModeArmed: boolean;
 }
@@ -93,8 +94,9 @@ function trimAmount(raw: string): string {
 export function DepositUsdcCard({
   chainId,
   vaultAddress,
-  usdcTokenAddress,
-  usdcDecimals,
+  tokenAddress: assetTokenAddress,
+  tokenDecimals,
+  tokenSymbol,
   explorerTxBaseUrl,
   liveModeArmed
 }: DepositUsdcCardProps) {
@@ -128,10 +130,10 @@ export function DepositUsdcCard({
   const handledReceiptHashRef = useRef<string | null>(null);
 
   const tokenAddress = useMemo(() => {
-    return isAddress(usdcTokenAddress)
-      ? (usdcTokenAddress as `0x${string}`)
+    return isAddress(assetTokenAddress)
+      ? (assetTokenAddress as `0x${string}`)
       : null;
-  }, [usdcTokenAddress]);
+  }, [assetTokenAddress]);
   const destinationAddress = useMemo(() => {
     return isAddress(vaultAddress) ? (vaultAddress as `0x${string}`) : null;
   }, [vaultAddress]);
@@ -224,18 +226,18 @@ export function DepositUsdcCard({
   const supportsAnytimeLiquidity = supportsAnytimeLiquidityRaw === true;
 
   const balanceText =
-    walletBalanceValue !== null ? formatUnits(walletBalanceValue, usdcDecimals) : null;
-  const sharesText = formatUnits(userSharesValue, usdcDecimals);
-  const maxWithdrawText = formatUnits(maxWithdrawValue, usdcDecimals);
+    walletBalanceValue !== null ? formatUnits(walletBalanceValue, tokenDecimals) : null;
+  const sharesText = formatUnits(userSharesValue, tokenDecimals);
+  const maxWithdrawText = formatUnits(maxWithdrawValue, tokenDecimals);
 
   const depositAmountRawPreview = useMemo(() => {
     if (!depositAmount) return null;
     try {
-      return parseUnits(depositAmount, usdcDecimals);
+      return parseUnits(depositAmount, tokenDecimals);
     } catch {
       return null;
     }
-  }, [depositAmount, usdcDecimals]);
+  }, [depositAmount, tokenDecimals]);
 
   const needsApproval = Boolean(
     isVaultUserFlowAvailable &&
@@ -296,14 +298,16 @@ export function DepositUsdcCard({
         amount,
         queuedAtMs: Date.now()
       });
-      setAutomationInfo("Exit queued. Waiting for vault to park in USDC, then continuing.");
+      setAutomationInfo(
+        `Exit queued. Waiting for vault to park in ${tokenSymbol}, then continuing.`
+      );
       void refetchHasOpenLpPosition();
       void refetchMaxWithdraw();
     } catch (requestError) {
       setLocalError(
         requestError instanceof Error
           ? requestError.message
-          : "Failed to queue Exit to USDC."
+          : `Failed to queue Exit to ${tokenSymbol}.`
       );
     } finally {
       setIsQueueingExit(false);
@@ -332,10 +336,10 @@ export function DepositUsdcCard({
     const queued = pendingDepositIntent;
     let amountRaw: bigint;
     try {
-      amountRaw = parseUnits(queued.amount, usdcDecimals);
+      amountRaw = parseUnits(queued.amount, tokenDecimals);
     } catch {
       setPendingDepositIntent(null);
-      setLocalError(`Amount format invalid for ${usdcDecimals}-decimals USDC.`);
+      setLocalError(`Amount format invalid for ${tokenDecimals}-decimals ${tokenSymbol}.`);
       return;
     }
     if (amountRaw <= 0n) {
@@ -345,13 +349,13 @@ export function DepositUsdcCard({
     }
     if (walletBalanceValue !== null && amountRaw > walletBalanceValue) {
       setPendingDepositIntent(null);
-      setLocalError("Insufficient USDC wallet balance for queued deposit.");
+      setLocalError(`Insufficient ${tokenSymbol} wallet balance for queued deposit.`);
       return;
     }
 
     setDepositAmount(queued.amount);
     setPendingDepositIntent(null);
-    setAutomationInfo("Vault is parked in USDC. Continuing your queued deposit.");
+    setAutomationInfo(`Vault is parked in ${tokenSymbol}. Continuing your queued deposit.`);
 
     if (isVaultUserFlowAvailable && allowanceValue < amountRaw) {
       setPendingAction("approve");
@@ -396,7 +400,8 @@ export function DepositUsdcCard({
     isBusy,
     destinationAddress,
     tokenAddress,
-    usdcDecimals,
+    tokenDecimals,
+    tokenSymbol,
     walletBalanceValue,
     isVaultUserFlowAvailable,
     allowanceValue,
@@ -413,10 +418,10 @@ export function DepositUsdcCard({
 
     let amountRaw: bigint;
     try {
-      amountRaw = parseUnits(pendingAutomation.amount, usdcDecimals);
+      amountRaw = parseUnits(pendingAutomation.amount, tokenDecimals);
     } catch {
       setPendingAutomation(null);
-      setLocalError(`Amount format invalid for ${usdcDecimals}-decimals USDC.`);
+      setLocalError(`Amount format invalid for ${tokenDecimals}-decimals ${tokenSymbol}.`);
       return;
     }
     if (amountRaw <= 0n) {
@@ -437,7 +442,7 @@ export function DepositUsdcCard({
 
     setWithdrawAmount(pendingAutomation.amount);
     setPendingAutomation(null);
-    setAutomationInfo("Vault is parked in USDC. Continuing your withdraw.");
+    setAutomationInfo(`Vault is parked in ${tokenSymbol}. Continuing your withdraw.`);
     setPendingAction("withdraw");
     writeContract({
       abi: TREASURY_VAULT_USER_ABI,
@@ -455,7 +460,8 @@ export function DepositUsdcCard({
     isBusy,
     destinationAddress,
     address,
-    usdcDecimals,
+    tokenDecimals,
+    tokenSymbol,
     maxWithdrawValue,
     writeContract,
     chainId
@@ -468,10 +474,10 @@ export function DepositUsdcCard({
 
     let amountRaw: bigint;
     try {
-      amountRaw = parseUnits(resumeQueuedDepositAfterApprove, usdcDecimals);
+      amountRaw = parseUnits(resumeQueuedDepositAfterApprove, tokenDecimals);
     } catch {
       setResumeQueuedDepositAfterApprove(null);
-      setLocalError(`Amount format invalid for ${usdcDecimals}-decimals USDC.`);
+      setLocalError(`Amount format invalid for ${tokenDecimals}-decimals ${tokenSymbol}.`);
       return;
     }
     setPendingAction("deposit");
@@ -490,7 +496,8 @@ export function DepositUsdcCard({
     isConfirmed,
     pendingAction,
     destinationAddress,
-    usdcDecimals,
+    tokenDecimals,
+    tokenSymbol,
     writeContract,
     chainId
   ]);
@@ -510,15 +517,15 @@ export function DepositUsdcCard({
       return;
     }
     if (!depositAmount) {
-      setLocalError("Enter a USDC amount.");
+      setLocalError(`Enter a ${tokenSymbol} amount.`);
       return;
     }
 
     let amountRaw: bigint;
     try {
-      amountRaw = parseUnits(depositAmount, usdcDecimals);
+      amountRaw = parseUnits(depositAmount, tokenDecimals);
     } catch {
-      setLocalError(`Amount format invalid for ${usdcDecimals}-decimals USDC.`);
+      setLocalError(`Amount format invalid for ${tokenDecimals}-decimals ${tokenSymbol}.`);
       return;
     }
     if (amountRaw <= 0n) {
@@ -526,7 +533,7 @@ export function DepositUsdcCard({
       return;
     }
     if (walletBalanceValue !== null && amountRaw > walletBalanceValue) {
-      setLocalError("Insufficient USDC wallet balance.");
+      setLocalError(`Insufficient ${tokenSymbol} wallet balance.`);
       return;
     }
 
@@ -537,7 +544,7 @@ export function DepositUsdcCard({
           queuedAtMs: Date.now()
         });
         setAutomationInfo(
-          "Deposit request queued. It will execute automatically once the vault is parked in USDC."
+          `Deposit request queued. It will execute automatically once the vault is parked in ${tokenSymbol}.`
         );
         return;
       }
@@ -606,9 +613,9 @@ export function DepositUsdcCard({
 
     let amountRaw: bigint;
     try {
-      amountRaw = parseUnits(withdrawAmount, usdcDecimals);
+      amountRaw = parseUnits(withdrawAmount, tokenDecimals);
     } catch {
-      setLocalError(`Amount format invalid for ${usdcDecimals}-decimals USDC.`);
+      setLocalError(`Amount format invalid for ${tokenDecimals}-decimals ${tokenSymbol}.`);
       return;
     }
     if (amountRaw <= 0n) {
@@ -680,7 +687,7 @@ export function DepositUsdcCard({
         <CardTitle className="flex items-center justify-between text-lg">
           <span className="flex items-center gap-2">
             <ArrowDownToLine className="h-5 w-5 text-primary" />
-            Deposit USDC To Vault
+            Deposit {tokenSymbol} To Vault
           </span>
           <Badge variant="outline" className="text-xs font-normal">
             Live wallet tx
@@ -689,24 +696,28 @@ export function DepositUsdcCard({
       </CardHeader>
       <CardContent className="space-y-3">
         <p className="break-all text-xs text-muted-foreground">Vault: {vaultAddress}</p>
-        <p className="break-all text-xs text-muted-foreground">USDC: {usdcTokenAddress}</p>
+        <p className="break-all text-xs text-muted-foreground">
+          {tokenSymbol}: {assetTokenAddress}
+        </p>
         <p className="rounded-md bg-secondary/50 p-2 text-xs text-muted-foreground">
           {supportsAnytimeLiquidity
             ? "Heads-up: anytime liquidity is enabled. Deposits and wallet withdrawals can run while LP is active; the vault auto-unwinds liquidity as needed under configured rails."
-            : "Heads-up: there is no mandatory 24h hold timer. Wallet withdrawals are available whenever funds are parked in USDC; if capital is deployed, use Exit to park first."}
+            : `Heads-up: there is no mandatory 24h hold timer. Wallet withdrawals are available whenever funds are parked in ${tokenSymbol}; if capital is deployed, use Exit to park first.`}
         </p>
 
         {isVaultUserFlowAvailable ? (
           <div className="space-y-1 rounded-md border border-border p-2 text-xs text-muted-foreground">
             <p>Your vault shares: {sharesText}</p>
-            <p>Withdrawable now: {maxWithdrawText} USDC</p>
+            <p>
+              Withdrawable now: {maxWithdrawText} {tokenSymbol}
+            </p>
             <p>
               Vault state:{" "}
               {hasOpenLpPosition
                 ? supportsAnytimeLiquidity
                   ? "active LP position (anytime liquidity enabled)"
                   : "active LP position (legacy flow)"
-                : "parked in USDC"}
+                : `parked in ${tokenSymbol}`}
             </p>
           </div>
         ) : (
@@ -721,11 +732,13 @@ export function DepositUsdcCard({
             value={depositAmount}
             onChange={(event) => setDepositAmount(trimAmount(event.target.value))}
             inputMode="decimal"
-            placeholder="Deposit amount in USDC"
+            placeholder={`Deposit amount in ${tokenSymbol}`}
           />
           <div className="flex items-center justify-between">
             <p className="text-xs text-muted-foreground">
-              {balanceText !== null ? `Wallet balance: ${balanceText} USDC` : "Wallet balance: -"}
+              {balanceText !== null
+                ? `Wallet balance: ${balanceText} ${tokenSymbol}`
+                : "Wallet balance: -"}
             </p>
             {balanceText !== null ? (
               <Button
@@ -757,15 +770,15 @@ export function DepositUsdcCard({
                 : isVaultUserFlowAvailable && hasOpenLpPosition && !supportsAnytimeLiquidity
                   ? "Queue Deposit Request"
                 : isVaultUserFlowAvailable && needsApproval
-                  ? "Approve USDC"
-                  : "Deposit USDC"}
+                  ? `Approve ${tokenSymbol}`
+                  : `Deposit ${tokenSymbol}`}
           {isBusy ? <Loader2 className="ml-2 h-4 w-4 animate-spin" /> : null}
         </Button>
 
         {isVaultUserFlowAvailable && hasOpenLpPosition && !supportsAnytimeLiquidity ? (
           <p className="text-xs text-muted-foreground">
             Active LP detected. Deposit requests are queued and execute when vault liquidity is
-            parked in USDC.
+            parked in {tokenSymbol}.
           </p>
         ) : null}
 
@@ -776,10 +789,12 @@ export function DepositUsdcCard({
               value={withdrawAmount}
               onChange={(event) => setWithdrawAmount(trimAmount(event.target.value))}
               inputMode="decimal"
-              placeholder="Withdraw amount in USDC"
+              placeholder={`Withdraw amount in ${tokenSymbol}`}
             />
             <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground">Available: {maxWithdrawText} USDC</p>
+              <p className="text-xs text-muted-foreground">
+                Available: {maxWithdrawText} {tokenSymbol}
+              </p>
               <Button
                 variant="ghost"
                 size="sm"
@@ -833,7 +848,7 @@ export function DepositUsdcCard({
         ) : null}
         {isConfirmed && pendingAction === "withdraw" ? (
           <p className="text-xs text-success">
-            Withdraw confirmed on-chain. USDC returned to your wallet.
+            Withdraw confirmed on-chain. {tokenSymbol} returned to your wallet.
           </p>
         ) : null}
         {txUrl ? (
@@ -848,12 +863,12 @@ export function DepositUsdcCard({
         ) : null}
         {lastSubmittedDepositAmount ? (
           <p className="text-xs text-muted-foreground">
-            Session deposit submitted: {lastSubmittedDepositAmount} USDC
+            Session deposit submitted: {lastSubmittedDepositAmount} {tokenSymbol}
           </p>
         ) : null}
         {lastSubmittedWithdrawAmount ? (
           <p className="text-xs text-muted-foreground">
-            Session withdraw submitted: {lastSubmittedWithdrawAmount} USDC
+            Session withdraw submitted: {lastSubmittedWithdrawAmount} {tokenSymbol}
           </p>
         ) : null}
       </CardContent>

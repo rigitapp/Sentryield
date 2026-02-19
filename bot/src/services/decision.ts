@@ -21,17 +21,26 @@ interface DecideInput {
 }
 
 export class DecisionService {
+  private readonly vaultDepositTokenLower: string;
+
   constructor(
     private readonly policy: PolicyConfig,
     private readonly poolById: Map<string, PoolConfig>,
     private readonly adapters: Map<string, StrategyAdapter>,
-    private readonly tradeAmountRaw: bigint
-  ) {}
+    private readonly tradeAmountRaw: bigint,
+    vaultDepositToken: string
+  ) {
+    this.vaultDepositTokenLower = vaultDepositToken.toLowerCase();
+  }
 
   async decide(input: DecideInput): Promise<Decision> {
     const eligibleSnapshots = input.snapshots.filter((snapshot) => {
       const pool = this.poolById.get(snapshot.poolId);
-      return pool?.enabled && pool.tier === "S";
+      return (
+        pool?.enabled &&
+        pool.tier === "S" &&
+        pool.tokenIn.toLowerCase() === this.vaultDepositTokenLower
+      );
     });
     const deployableEligibleSnapshots = input.deployableEntryPoolIds
       ? eligibleSnapshots.filter((snapshot) => input.deployableEntryPoolIds?.has(snapshot.poolId))

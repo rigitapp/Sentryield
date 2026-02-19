@@ -106,6 +106,13 @@ export interface DashboardData {
   liveModeArmed: boolean;
   chainId: number;
   vaultAddress: string;
+  vaultTokenAddress: string;
+  vaultTokenDecimals: number;
+  vaultTokenSymbol: string;
+  vaultTokenBalance: number | null;
+  totalDepositsUsd: number | null;
+  totalLiquidityUsd: number | null;
+  totalVaultCount: number;
   usdcTokenAddress: string;
   usdcDecimals: number;
   vaultUsdcBalance: number | null;

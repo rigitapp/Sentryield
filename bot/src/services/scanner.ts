@@ -1,5 +1,6 @@
 import type { StrategyAdapter } from "../adapters/adapter.interface.js";
 import type { PoolConfig, PoolSnapshot } from "../types.js";
+import type { BaseApyOracle } from "./base-apy-oracle.js";
 import {
   computeIncentiveAprBps,
   computeNetApyBps,
@@ -14,13 +15,27 @@ export class ScannerService {
     private readonly adapters: Map<string, StrategyAdapter>,
     private readonly priceOracle: PriceOracle,
     private readonly tradeAmountRaw: bigint,
-    private readonly poolTimeoutMs = resolvePoolTimeoutMs()
+    private readonly poolTimeoutMs = resolvePoolTimeoutMs(),
+    private readonly baseApyOracle?: BaseApyOracle
   ) {}
 
   async scan(timestamp: number): Promise<PoolSnapshot[]> {
     const enabledPools = this.pools.filter((pool) => pool.enabled);
+    let baseApyOverrides = new Map<string, number>();
+    if (this.baseApyOracle && enabledPools.length > 0) {
+      try {
+        baseApyOverrides = await this.baseApyOracle.resolveBaseApyBpsByPool(enabledPools);
+      } catch (error) {
+        console.warn(
+          `[base-apy] Dynamic base APY refresh failed; using static BASE_APY_BPS_* values: ${toErrorMessage(error)}`
+        );
+      }
+    }
+
     const settled = await Promise.allSettled(
-      enabledPools.map((pool) => this.scanPoolWithTimeout(pool, timestamp))
+      enabledPools.map((pool) =>
+        this.scanPoolWithTimeout(pool, timestamp, baseApyOverrides)
+      )
     );
 
     const snapshots: PoolSnapshot[] = [];
@@ -46,22 +61,28 @@ export class ScannerService {
 
   private async scanPoolWithTimeout(
     pool: PoolConfig,
-    timestamp: number
+    timestamp: number,
+    baseApyOverrides: Map<string, number>
   ): Promise<PoolSnapshot> {
     return withTimeout(
-      this.scanPool(pool, timestamp),
+      this.scanPool(pool, timestamp, baseApyOverrides),
       this.poolTimeoutMs,
       `Pool ${pool.id} scan timed out after ${this.poolTimeoutMs}ms.`
     );
   }
 
-  private async scanPool(pool: PoolConfig, timestamp: number): Promise<PoolSnapshot> {
+  private async scanPool(
+    pool: PoolConfig,
+    timestamp: number,
+    baseApyOverrides: Map<string, number>
+  ): Promise<PoolSnapshot> {
     const adapter = this.adapters.get(pool.adapterId);
     if (!adapter) {
       throw new Error(`Missing adapter for pool ${pool.id}: ${pool.adapterId}`);
     }
 
     const state = await adapter.fetchPoolState(pool);
+    const baseApyBps = baseApyOverrides.get(pool.id) ?? state.baseApyBps;
     const rewardTokenPriceUsd = await this.priceOracle.getPriceUsd(
       state.rewardTokenSymbol
     );
@@ -71,7 +92,7 @@ export class ScannerService {
       state.tvlUsd
     );
     const netApyBps = computeNetApyBps(
-      state.baseApyBps,
+      baseApyBps,
       incentiveAprBps,
       state.protocolFeeBps
     );

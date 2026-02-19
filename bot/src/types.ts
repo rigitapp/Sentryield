@@ -45,6 +45,8 @@ export interface TokenConfig {
   AUSD: Address;
   MON: Address;
   WMON: Address;
+  SHMON: Address;
+  KMON: Address;
 }
 
 export interface PolicyConfig {
@@ -61,6 +63,7 @@ export interface RuntimeConfig {
   rpcUrl: string;
   chainId: number;
   vaultAddress: Address;
+  vaultDepositToken: Address;
   executorPrivateKey?: Hex;
   explorerTxBaseUrl: string;
   dryRun: boolean;

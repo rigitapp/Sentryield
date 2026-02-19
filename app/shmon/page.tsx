@@ -3,8 +3,8 @@ import { getDashboardData } from "@/lib/server/dashboard-data";
 
 export const dynamic = "force-dynamic";
 
-export default async function Dashboard() {
-  const initialData = await getDashboardData("usdc");
+export default async function ShmonDashboardPage() {
+  const initialData = await getDashboardData("shmon");
   const refreshIntervalMs = Number(process.env.DASHBOARD_REFRESH_MS ?? "10000");
   const safeRefreshIntervalMs =
     Number.isFinite(refreshIntervalMs) && refreshIntervalMs > 0
@@ -15,7 +15,8 @@ export default async function Dashboard() {
     <DashboardLive
       initialData={initialData}
       refreshIntervalMs={safeRefreshIntervalMs}
-      apiPath="/api/dashboard/usdc"
+      apiPath="/api/dashboard/shmon"
     />
   );
 }
+

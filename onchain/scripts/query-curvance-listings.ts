@@ -39,6 +39,15 @@ interface ListingRow {
   borrowPaused: boolean;
 }
 
+interface DynamicMarketDataToken {
+  _address: Address;
+}
+
+interface DynamicMarketDataRow {
+  _address: Address;
+  tokens: DynamicMarketDataToken[];
+}
+
 function readEnvAddress(name: string, fallback: string): Address {
   const raw = (process.env[name] ?? fallback).trim();
   return getAddress(raw);
@@ -54,11 +63,11 @@ async function main(): Promise<void> {
     transport: http(rpcUrl)
   });
 
-  const dynamicMarkets = await client.readContract({
+  const dynamicMarkets = (await client.readContract({
     address: protocolReader,
     abi: PROTOCOL_READER_ABI,
     functionName: "getDynamicMarketData"
-  });
+  })) as DynamicMarketDataRow[];
 
   const listings: ListingRow[] = [];
   for (const market of dynamicMarkets) {

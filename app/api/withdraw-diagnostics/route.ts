@@ -12,7 +12,7 @@ import {
 export const dynamic = "force-dynamic";
 
 const DEFAULT_RPC_URL = "https://rpc.monad.xyz";
-const DEFAULT_USDC_DECIMALS = 6;
+const DEFAULT_VAULT_TOKEN_DECIMALS = 6;
 
 const WITHDRAW_ABI = parseAbi([
   "function withdrawToWallet(uint256 amountOut,address receiver) returns (uint256 sharesBurned)"
@@ -63,26 +63,34 @@ function resolveRpcUrl(): string {
   return raw || DEFAULT_RPC_URL;
 }
 
-function resolveUsdcDecimals(): number {
-  const raw = process.env.USDC_DECIMALS?.trim();
-  if (!raw) return DEFAULT_USDC_DECIMALS;
+function resolveVaultTokenDecimals(): number {
+  const raw =
+    process.env.VAULT_DEPOSIT_TOKEN_DECIMALS?.trim() ?? process.env.USDC_DECIMALS?.trim();
+  if (!raw) return DEFAULT_VAULT_TOKEN_DECIMALS;
   const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed < 0) return DEFAULT_USDC_DECIMALS;
+  if (!Number.isFinite(parsed) || parsed < 0) return DEFAULT_VAULT_TOKEN_DECIMALS;
   return Math.floor(parsed);
 }
 
+function resolveVaultTokenSymbol(): string {
+  const symbol = process.env.VAULT_DEPOSIT_TOKEN_SYMBOL?.trim();
+  if (!symbol) return "USDC";
+  return symbol;
+}
+
 function formatErrorMessage(errorName: string, args: unknown[]): string {
-  const usdcDecimals = resolveUsdcDecimals();
+  const tokenDecimals = resolveVaultTokenDecimals();
+  const tokenSymbol = resolveVaultTokenSymbol();
   if (errorName === "InsufficientLiquidityForWithdraw") {
     const available = typeof args[0] === "bigint" ? args[0] : 0n;
     const requested = typeof args[1] === "bigint" ? args[1] : 0n;
     return `Withdraw exceeds immediate vault liquidity rails. Available now: ${formatUnits(
       available,
-      usdcDecimals
-    )} USDC, requested: ${formatUnits(
+      tokenDecimals
+    )} ${tokenSymbol}, requested: ${formatUnits(
       requested,
-      usdcDecimals
-    )} USDC. Try a smaller amount or wait for additional unwind capacity.`;
+      tokenDecimals
+    )} ${tokenSymbol}. Try a smaller amount or wait for additional unwind capacity.`;
   }
   if (errorName === "MissingLpRoute") {
     return "Vault LP route is missing for one of the active positions. Configure LP routes before withdrawing.";

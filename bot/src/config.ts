@@ -41,6 +41,8 @@ const CHAIN_CONFIG = JSON.parse(
   readFileSync(CHAIN_CONFIG_PATH, "utf8")
 ) as CurvanceMainnetConfig;
 const PAIRS = ["AUSD/MON", "USDC/MON", "WMON/MON", "shMON/MON", "kMON/MON"] as const;
+const DEFAULT_CURVANCE_PROTOCOL_READER = "0x878cDfc2F3D96a49A5CbD805FAF4F3080768a6d2";
+const DEFAULT_MORPHO_GRAPHQL_ENDPOINT = "https://api.morpho.org/graphql";
 
 function envNumber(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -100,7 +102,9 @@ export const TOKENS: TokenConfig = {
   USDC: CHAIN_CONFIG.tokens.USDC,
   AUSD: CHAIN_CONFIG.tokens.AUSD,
   MON: CHAIN_CONFIG.tokens.MON,
-  WMON: CHAIN_CONFIG.tokens.WMON
+  WMON: CHAIN_CONFIG.tokens.WMON,
+  SHMON: envAddress("TOKEN_SHMON_ADDRESS"),
+  KMON: envAddress("TOKEN_KMON_ADDRESS")
 };
 
 const MIN_HOLD_SECONDS = Math.max(0, envNumber("MIN_HOLD_SECONDS", 0));
@@ -143,13 +147,49 @@ const MORPHO_AUSD_REWARD_RATE_PER_SECOND = envNumber("MORPHO_AUSD_REWARD_RATE_PE
 const MORPHO_AUSD_PROTOCOL_FEE_BPS = envNumber("MORPHO_AUSD_PROTOCOL_FEE_BPS", MORPHO_PROTOCOL_FEE_BPS);
 const MORPHO_AUSD_ROTATION_COST_BPS = envNumber("MORPHO_AUSD_ROTATION_COST_BPS", MORPHO_ROTATION_COST_BPS);
 
+const MORPHO_SHMON_PAIR = envPair("MORPHO_SHMON_PAIR", "shMON/MON");
+const MORPHO_SHMON_TOKEN_IN_ADDRESS = envAddress("MORPHO_SHMON_TOKEN_IN_ADDRESS", TOKENS.SHMON);
+const MORPHO_SHMON_TARGET_ADAPTER_ADDRESS = envAddress(
+  "MORPHO_SHMON_TARGET_ADAPTER_ADDRESS",
+  MORPHO_TARGET_ADAPTER_ADDRESS
+);
+const MORPHO_SHMON_BASE_APY_BPS = envNumber("BASE_APY_BPS_MORPHO_SHMON", MORPHO_BASE_APY_BPS);
+const MORPHO_SHMON_REWARD_TOKEN_SYMBOL = envString("MORPHO_SHMON_REWARD_TOKEN_SYMBOL", "shMON");
+const MORPHO_SHMON_REWARD_RATE_PER_SECOND = envNumber("MORPHO_SHMON_REWARD_RATE_PER_SECOND", 0);
+const MORPHO_SHMON_PROTOCOL_FEE_BPS = envNumber(
+  "MORPHO_SHMON_PROTOCOL_FEE_BPS",
+  MORPHO_PROTOCOL_FEE_BPS
+);
+const MORPHO_SHMON_ROTATION_COST_BPS = envNumber(
+  "MORPHO_SHMON_ROTATION_COST_BPS",
+  MORPHO_ROTATION_COST_BPS
+);
+
+const MORPHO_KMON_PAIR = envPair("MORPHO_KMON_PAIR", "kMON/MON");
+const MORPHO_KMON_TOKEN_IN_ADDRESS = envAddress("MORPHO_KMON_TOKEN_IN_ADDRESS", TOKENS.KMON);
+const MORPHO_KMON_TARGET_ADAPTER_ADDRESS = envAddress(
+  "MORPHO_KMON_TARGET_ADAPTER_ADDRESS",
+  MORPHO_TARGET_ADAPTER_ADDRESS
+);
+const MORPHO_KMON_BASE_APY_BPS = envNumber("BASE_APY_BPS_MORPHO_KMON", MORPHO_BASE_APY_BPS);
+const MORPHO_KMON_REWARD_TOKEN_SYMBOL = envString("MORPHO_KMON_REWARD_TOKEN_SYMBOL", "kMON");
+const MORPHO_KMON_REWARD_RATE_PER_SECOND = envNumber("MORPHO_KMON_REWARD_RATE_PER_SECOND", 0);
+const MORPHO_KMON_PROTOCOL_FEE_BPS = envNumber(
+  "MORPHO_KMON_PROTOCOL_FEE_BPS",
+  MORPHO_PROTOCOL_FEE_BPS
+);
+const MORPHO_KMON_ROTATION_COST_BPS = envNumber(
+  "MORPHO_KMON_ROTATION_COST_BPS",
+  MORPHO_ROTATION_COST_BPS
+);
+
 export const POOLS: PoolConfig[] = [
   {
     id: "curvance-usdc-market",
     protocol: "Curvance",
     pair: "USDC/MON",
     tier: "S",
-    enabled: true,
+    enabled: envBool("CURVANCE_ENABLED", true),
     adapterId: "curvance",
     tokenIn: TOKENS.USDC,
     target: CURVANCE_TARGET_ADAPTER,
@@ -213,6 +253,46 @@ export const POOLS: PoolConfig[] = [
     rotationCostBps: MORPHO_AUSD_ROTATION_COST_BPS
   },
   {
+    id: "morpho-shmon-vault",
+    protocol: "Morpho",
+    pair: MORPHO_SHMON_PAIR,
+    tier: "S",
+    enabled: envBool("MORPHO_SHMON_ENABLED", false),
+    adapterId: "morpho",
+    tokenIn: MORPHO_SHMON_TOKEN_IN_ADDRESS,
+    target: MORPHO_SHMON_TARGET_ADAPTER_ADDRESS,
+    pool: envAddress("MORPHO_SHMON_POOL_ADDRESS"),
+    lpToken: envAddress(
+      "MORPHO_SHMON_LP_TOKEN_ADDRESS",
+      envAddress("MORPHO_SHMON_POOL_ADDRESS")
+    ),
+    baseApyBps: MORPHO_SHMON_BASE_APY_BPS,
+    rewardTokenSymbol: MORPHO_SHMON_REWARD_TOKEN_SYMBOL,
+    rewardRatePerSecond: MORPHO_SHMON_REWARD_RATE_PER_SECOND,
+    protocolFeeBps: MORPHO_SHMON_PROTOCOL_FEE_BPS,
+    rotationCostBps: MORPHO_SHMON_ROTATION_COST_BPS
+  },
+  {
+    id: "morpho-kmon-vault",
+    protocol: "Morpho",
+    pair: MORPHO_KMON_PAIR,
+    tier: "S",
+    enabled: envBool("MORPHO_KMON_ENABLED", false),
+    adapterId: "morpho",
+    tokenIn: MORPHO_KMON_TOKEN_IN_ADDRESS,
+    target: MORPHO_KMON_TARGET_ADAPTER_ADDRESS,
+    pool: envAddress("MORPHO_KMON_POOL_ADDRESS"),
+    lpToken: envAddress(
+      "MORPHO_KMON_LP_TOKEN_ADDRESS",
+      envAddress("MORPHO_KMON_POOL_ADDRESS")
+    ),
+    baseApyBps: MORPHO_KMON_BASE_APY_BPS,
+    rewardTokenSymbol: MORPHO_KMON_REWARD_TOKEN_SYMBOL,
+    rewardRatePerSecond: MORPHO_KMON_REWARD_RATE_PER_SECOND,
+    protocolFeeBps: MORPHO_KMON_PROTOCOL_FEE_BPS,
+    rotationCostBps: MORPHO_KMON_ROTATION_COST_BPS
+  },
+  {
     id: "gearbox-usdc-vault",
     protocol: "Gearbox",
     pair: envPair("GEARBOX_PAIR", "USDC/MON"),
@@ -228,6 +308,96 @@ export const POOLS: PoolConfig[] = [
     rewardRatePerSecond: envNumber("GEARBOX_REWARD_RATE_PER_SECOND", 0),
     protocolFeeBps: envNumber("GEARBOX_PROTOCOL_FEE_BPS", 9),
     rotationCostBps: envNumber("GEARBOX_ROTATION_COST_BPS", 15)
+  },
+  {
+    id: "gearbox-ausd-vault",
+    protocol: "Gearbox",
+    pair: envPair("GEARBOX_AUSD_PAIR", "AUSD/MON"),
+    tier: "S",
+    enabled: envBool("GEARBOX_AUSD_ENABLED", false),
+    adapterId: "gearbox",
+    tokenIn: envAddress("GEARBOX_AUSD_TOKEN_IN_ADDRESS", TOKENS.AUSD),
+    target: envAddress(
+      "GEARBOX_AUSD_TARGET_ADAPTER_ADDRESS",
+      envAddress("GEARBOX_TARGET_ADAPTER_ADDRESS")
+    ),
+    pool: envAddress("GEARBOX_AUSD_POOL_ADDRESS"),
+    lpToken: envAddress(
+      "GEARBOX_AUSD_LP_TOKEN_ADDRESS",
+      envAddress("GEARBOX_AUSD_POOL_ADDRESS")
+    ),
+    baseApyBps: envNumber("BASE_APY_BPS_GEARBOX_AUSD", envNumber("BASE_APY_BPS_GEARBOX", 380)),
+    rewardTokenSymbol: envString("GEARBOX_AUSD_REWARD_TOKEN_SYMBOL", "AUSD"),
+    rewardRatePerSecond: envNumber("GEARBOX_AUSD_REWARD_RATE_PER_SECOND", 0),
+    protocolFeeBps: envNumber("GEARBOX_AUSD_PROTOCOL_FEE_BPS", envNumber("GEARBOX_PROTOCOL_FEE_BPS", 9)),
+    rotationCostBps: envNumber(
+      "GEARBOX_AUSD_ROTATION_COST_BPS",
+      envNumber("GEARBOX_ROTATION_COST_BPS", 15)
+    )
+  },
+  {
+    id: "gearbox-shmon-vault",
+    protocol: "Gearbox",
+    pair: envPair("GEARBOX_SHMON_PAIR", "shMON/MON"),
+    tier: "S",
+    enabled: envBool("GEARBOX_SHMON_ENABLED", false),
+    adapterId: "gearbox",
+    tokenIn: envAddress("GEARBOX_SHMON_TOKEN_IN_ADDRESS", TOKENS.SHMON),
+    target: envAddress(
+      "GEARBOX_SHMON_TARGET_ADAPTER_ADDRESS",
+      envAddress("GEARBOX_TARGET_ADAPTER_ADDRESS")
+    ),
+    pool: envAddress("GEARBOX_SHMON_POOL_ADDRESS"),
+    lpToken: envAddress(
+      "GEARBOX_SHMON_LP_TOKEN_ADDRESS",
+      envAddress("GEARBOX_SHMON_POOL_ADDRESS")
+    ),
+    baseApyBps: envNumber(
+      "BASE_APY_BPS_GEARBOX_SHMON",
+      envNumber("BASE_APY_BPS_GEARBOX", 380)
+    ),
+    rewardTokenSymbol: envString("GEARBOX_SHMON_REWARD_TOKEN_SYMBOL", "shMON"),
+    rewardRatePerSecond: envNumber("GEARBOX_SHMON_REWARD_RATE_PER_SECOND", 0),
+    protocolFeeBps: envNumber(
+      "GEARBOX_SHMON_PROTOCOL_FEE_BPS",
+      envNumber("GEARBOX_PROTOCOL_FEE_BPS", 9)
+    ),
+    rotationCostBps: envNumber(
+      "GEARBOX_SHMON_ROTATION_COST_BPS",
+      envNumber("GEARBOX_ROTATION_COST_BPS", 15)
+    )
+  },
+  {
+    id: "gearbox-kmon-vault",
+    protocol: "Gearbox",
+    pair: envPair("GEARBOX_KMON_PAIR", "kMON/MON"),
+    tier: "S",
+    enabled: envBool("GEARBOX_KMON_ENABLED", false),
+    adapterId: "gearbox",
+    tokenIn: envAddress("GEARBOX_KMON_TOKEN_IN_ADDRESS", TOKENS.KMON),
+    target: envAddress(
+      "GEARBOX_KMON_TARGET_ADAPTER_ADDRESS",
+      envAddress("GEARBOX_TARGET_ADAPTER_ADDRESS")
+    ),
+    pool: envAddress("GEARBOX_KMON_POOL_ADDRESS"),
+    lpToken: envAddress(
+      "GEARBOX_KMON_LP_TOKEN_ADDRESS",
+      envAddress("GEARBOX_KMON_POOL_ADDRESS")
+    ),
+    baseApyBps: envNumber(
+      "BASE_APY_BPS_GEARBOX_KMON",
+      envNumber("BASE_APY_BPS_GEARBOX", 380)
+    ),
+    rewardTokenSymbol: envString("GEARBOX_KMON_REWARD_TOKEN_SYMBOL", "kMON"),
+    rewardRatePerSecond: envNumber("GEARBOX_KMON_REWARD_RATE_PER_SECOND", 0),
+    protocolFeeBps: envNumber(
+      "GEARBOX_KMON_PROTOCOL_FEE_BPS",
+      envNumber("GEARBOX_PROTOCOL_FEE_BPS", 9)
+    ),
+    rotationCostBps: envNumber(
+      "GEARBOX_KMON_ROTATION_COST_BPS",
+      envNumber("GEARBOX_ROTATION_COST_BPS", 15)
+    )
   },
   {
     id: "townsquare-usdc-vault",
@@ -268,6 +438,102 @@ export const POOLS: PoolConfig[] = [
     rewardRatePerSecond: envNumber("NEVERLAND_REWARD_RATE_PER_SECOND", 0),
     protocolFeeBps: envNumber("NEVERLAND_PROTOCOL_FEE_BPS", 10),
     rotationCostBps: envNumber("NEVERLAND_ROTATION_COST_BPS", 16)
+  },
+  {
+    id: "neverland-ausd-vault",
+    protocol: "Neverland",
+    pair: envPair("NEVERLAND_AUSD_PAIR", "AUSD/MON"),
+    tier: "S",
+    enabled: envBool("NEVERLAND_AUSD_ENABLED", false),
+    adapterId: "neverland",
+    tokenIn: envAddress("NEVERLAND_AUSD_TOKEN_IN_ADDRESS", TOKENS.AUSD),
+    target: envAddress(
+      "NEVERLAND_AUSD_TARGET_ADAPTER_ADDRESS",
+      envAddress("NEVERLAND_TARGET_ADAPTER_ADDRESS")
+    ),
+    pool: envAddress("NEVERLAND_AUSD_POOL_ADDRESS"),
+    lpToken: envAddress(
+      "NEVERLAND_AUSD_LP_TOKEN_ADDRESS",
+      envAddress("NEVERLAND_AUSD_POOL_ADDRESS")
+    ),
+    baseApyBps: envNumber(
+      "BASE_APY_BPS_NEVERLAND_AUSD",
+      envNumber("BASE_APY_BPS_NEVERLAND", 350)
+    ),
+    rewardTokenSymbol: envString("NEVERLAND_AUSD_REWARD_TOKEN_SYMBOL", "AUSD"),
+    rewardRatePerSecond: envNumber("NEVERLAND_AUSD_REWARD_RATE_PER_SECOND", 0),
+    protocolFeeBps: envNumber(
+      "NEVERLAND_AUSD_PROTOCOL_FEE_BPS",
+      envNumber("NEVERLAND_PROTOCOL_FEE_BPS", 10)
+    ),
+    rotationCostBps: envNumber(
+      "NEVERLAND_AUSD_ROTATION_COST_BPS",
+      envNumber("NEVERLAND_ROTATION_COST_BPS", 16)
+    )
+  },
+  {
+    id: "neverland-shmon-vault",
+    protocol: "Neverland",
+    pair: envPair("NEVERLAND_SHMON_PAIR", "shMON/MON"),
+    tier: "S",
+    enabled: envBool("NEVERLAND_SHMON_ENABLED", false),
+    adapterId: "neverland",
+    tokenIn: envAddress("NEVERLAND_SHMON_TOKEN_IN_ADDRESS", TOKENS.SHMON),
+    target: envAddress(
+      "NEVERLAND_SHMON_TARGET_ADAPTER_ADDRESS",
+      envAddress("NEVERLAND_TARGET_ADAPTER_ADDRESS")
+    ),
+    pool: envAddress("NEVERLAND_SHMON_POOL_ADDRESS"),
+    lpToken: envAddress(
+      "NEVERLAND_SHMON_LP_TOKEN_ADDRESS",
+      envAddress("NEVERLAND_SHMON_POOL_ADDRESS")
+    ),
+    baseApyBps: envNumber(
+      "BASE_APY_BPS_NEVERLAND_SHMON",
+      envNumber("BASE_APY_BPS_NEVERLAND", 350)
+    ),
+    rewardTokenSymbol: envString("NEVERLAND_SHMON_REWARD_TOKEN_SYMBOL", "shMON"),
+    rewardRatePerSecond: envNumber("NEVERLAND_SHMON_REWARD_RATE_PER_SECOND", 0),
+    protocolFeeBps: envNumber(
+      "NEVERLAND_SHMON_PROTOCOL_FEE_BPS",
+      envNumber("NEVERLAND_PROTOCOL_FEE_BPS", 10)
+    ),
+    rotationCostBps: envNumber(
+      "NEVERLAND_SHMON_ROTATION_COST_BPS",
+      envNumber("NEVERLAND_ROTATION_COST_BPS", 16)
+    )
+  },
+  {
+    id: "neverland-kmon-vault",
+    protocol: "Neverland",
+    pair: envPair("NEVERLAND_KMON_PAIR", "kMON/MON"),
+    tier: "S",
+    enabled: envBool("NEVERLAND_KMON_ENABLED", false),
+    adapterId: "neverland",
+    tokenIn: envAddress("NEVERLAND_KMON_TOKEN_IN_ADDRESS", TOKENS.KMON),
+    target: envAddress(
+      "NEVERLAND_KMON_TARGET_ADAPTER_ADDRESS",
+      envAddress("NEVERLAND_TARGET_ADAPTER_ADDRESS")
+    ),
+    pool: envAddress("NEVERLAND_KMON_POOL_ADDRESS"),
+    lpToken: envAddress(
+      "NEVERLAND_KMON_LP_TOKEN_ADDRESS",
+      envAddress("NEVERLAND_KMON_POOL_ADDRESS")
+    ),
+    baseApyBps: envNumber(
+      "BASE_APY_BPS_NEVERLAND_KMON",
+      envNumber("BASE_APY_BPS_NEVERLAND", 350)
+    ),
+    rewardTokenSymbol: envString("NEVERLAND_KMON_REWARD_TOKEN_SYMBOL", "kMON"),
+    rewardRatePerSecond: envNumber("NEVERLAND_KMON_REWARD_RATE_PER_SECOND", 0),
+    protocolFeeBps: envNumber(
+      "NEVERLAND_KMON_PROTOCOL_FEE_BPS",
+      envNumber("NEVERLAND_PROTOCOL_FEE_BPS", 10)
+    ),
+    rotationCostBps: envNumber(
+      "NEVERLAND_KMON_ROTATION_COST_BPS",
+      envNumber("NEVERLAND_ROTATION_COST_BPS", 16)
+    )
   }
 ];
 
@@ -275,6 +541,7 @@ export const RUNTIME: RuntimeConfig = {
   rpcUrl: process.env.MONAD_RPC_URL ?? CHAIN_CONFIG.rpcUrl,
   chainId: envNumber("MONAD_CHAIN_ID", CHAIN_CONFIG.chainId),
   vaultAddress: (process.env.VAULT_ADDRESS ?? ZERO_ADDRESS) as Address,
+  vaultDepositToken: envAddress("VAULT_DEPOSIT_TOKEN_ADDRESS", TOKENS.USDC),
   executorPrivateKey: process.env.BOT_EXECUTOR_PRIVATE_KEY as RuntimeConfig["executorPrivateKey"],
   explorerTxBaseUrl: process.env.EXPLORER_TX_BASE_URL ?? CHAIN_CONFIG.explorerTxBaseUrl,
   dryRun: envBool("DRY_RUN", true),
@@ -335,10 +602,28 @@ export const PRICE_ORACLE_WARN_COOLDOWN_MS = envNumber(
   "PRICE_ORACLE_WARN_COOLDOWN_MS",
   300_000
 );
+export const BASE_APY_AUTO_UPDATE = envBool("BASE_APY_AUTO_UPDATE", false);
+export const BASE_APY_ORACLE_TIMEOUT_MS = envNumber("BASE_APY_ORACLE_TIMEOUT_MS", 8_000);
+export const BASE_APY_WARN_COOLDOWN_MS = envNumber("BASE_APY_WARN_COOLDOWN_MS", 300_000);
+export const BASE_APY_ERC4626_LOOKBACK_SECONDS = envNumber(
+  "BASE_APY_ERC4626_LOOKBACK_SECONDS",
+  3600
+);
+export const CURVANCE_PROTOCOL_READER_ADDRESS = envAddress(
+  "CURVANCE_PROTOCOL_READER_ADDRESS",
+  DEFAULT_CURVANCE_PROTOCOL_READER as Address
+);
+export const MORPHO_GRAPHQL_ENDPOINT = envString(
+  "MORPHO_GRAPHQL_ENDPOINT",
+  DEFAULT_MORPHO_GRAPHQL_ENDPOINT
+);
 export const COINGECKO_ID_BY_SYMBOL: Record<string, string> = {
   USDC: envString("COINGECKO_ID_USDC", "usd-coin"),
   MON: envString("COINGECKO_ID_MON", "monad"),
-  AUSD: envString("COINGECKO_ID_AUSD", "")
+  WMON: envString("COINGECKO_ID_WMON", envString("COINGECKO_ID_MON", "monad")),
+  AUSD: envString("COINGECKO_ID_AUSD", ""),
+  SHMON: envString("COINGECKO_ID_SHMON", envString("COINGECKO_ID_MON", "monad")),
+  KMON: envString("COINGECKO_ID_KMON", "")
 };
 
 if (!RUNTIME.dryRun) {

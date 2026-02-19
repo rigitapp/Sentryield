@@ -11,10 +11,17 @@ import {
 import type { StrategyAdapter } from "./adapters/adapter.interface.js";
 import { CurvanceAdapter } from "./adapters/curvance.adapter.js";
 import { Erc4626Adapter } from "./adapters/erc4626.adapter.js";
+import { NeverlandAaveAdapter } from "./adapters/neverland.adapter.js";
 import {
+  BASE_APY_AUTO_UPDATE,
+  BASE_APY_ERC4626_LOOKBACK_SECONDS,
+  BASE_APY_ORACLE_TIMEOUT_MS,
+  BASE_APY_WARN_COOLDOWN_MS,
   COINGECKO_API_BASE_URL,
   COINGECKO_API_KEY,
   COINGECKO_ID_BY_SYMBOL,
+  CURVANCE_PROTOCOL_READER_ADDRESS,
+  MORPHO_GRAPHQL_ENDPOINT,
   POOL_BY_ID,
   POOLS,
   POLICY,
@@ -26,12 +33,12 @@ import {
   RUNTIME,
   STATIC_STABLE_PRICE_USD,
   STABLE_PRICE_SYMBOLS,
-  USE_STATIC_STABLE_PRICES,
-  TOKENS
+  USE_STATIC_STABLE_PRICES
 } from "./config.js";
 import { DecisionService } from "./services/decision.js";
 import { ExecutorService } from "./services/executor.js";
 import { ScannerService } from "./services/scanner.js";
+import { LiveBaseApyOracle } from "./services/base-apy-oracle.js";
 import {
   BotStatusServer,
   type BotRuntimeStatus,
@@ -126,7 +133,7 @@ async function main(): Promise<void> {
     ["morpho", new Erc4626Adapter("morpho", publicClient)],
     ["gearbox", new Erc4626Adapter("gearbox", publicClient)],
     ["townsquare", new Erc4626Adapter("townsquare", publicClient)],
-    ["neverland", new Erc4626Adapter("neverland", publicClient)]
+    ["neverland", new NeverlandAaveAdapter(publicClient)]
   ]);
   const oracle = new LivePriceOracle({
     baseUrl: COINGECKO_API_BASE_URL,
@@ -141,22 +148,37 @@ async function main(): Promise<void> {
     staleFallbackTtlMs: PRICE_ORACLE_STALE_FALLBACK_TTL_MS,
     warningCooldownMs: PRICE_ORACLE_WARN_COOLDOWN_MS
   });
+  const baseApyOracle = BASE_APY_AUTO_UPDATE
+    ? new LiveBaseApyOracle({
+        rpcUrl: RUNTIME.rpcUrl,
+        chainId: RUNTIME.chainId,
+        curvanceProtocolReader: CURVANCE_PROTOCOL_READER_ADDRESS,
+        morphoGraphqlEndpoint: MORPHO_GRAPHQL_ENDPOINT,
+        timeoutMs: BASE_APY_ORACLE_TIMEOUT_MS,
+        warnCooldownMs: BASE_APY_WARN_COOLDOWN_MS,
+        erc4626LookbackSeconds: BASE_APY_ERC4626_LOOKBACK_SECONDS
+      })
+    : undefined;
 
   const scanner = new ScannerService(
     POOLS,
     adapters,
     oracle,
-    RUNTIME.defaultTradeAmountRaw
+    RUNTIME.defaultTradeAmountRaw,
+    undefined,
+    baseApyOracle
   );
   const decisionService = new DecisionService(
     POLICY,
     POOL_BY_ID,
     adapters,
-    RUNTIME.defaultTradeAmountRaw
+    RUNTIME.defaultTradeAmountRaw,
+    RUNTIME.vaultDepositToken
   );
   const executor = new ExecutorService(
     {
       vaultAddress: RUNTIME.vaultAddress,
+      vaultDepositToken: RUNTIME.vaultDepositToken,
       dryRun: RUNTIME.dryRun,
       liveModeArmed: RUNTIME.liveModeArmed,
       defaultTradeAmountRaw: RUNTIME.defaultTradeAmountRaw,
@@ -165,8 +187,7 @@ async function main(): Promise<void> {
       minHoldSeconds: POLICY.minHoldSeconds,
       enterOnlyMode: RUNTIME.enterOnlyMode,
       maxRotationsPerDay: RUNTIME.maxRotationsPerDay,
-      cooldownSeconds: RUNTIME.cooldownSeconds,
-      usdcToken: TOKENS.USDC
+      cooldownSeconds: RUNTIME.cooldownSeconds
     },
     publicClient,
     walletClient,
@@ -276,7 +297,7 @@ async function main(): Promise<void> {
       await db.addDecision(decision);
 
       console.log(
-        `[decision] ${decision.action} | reasonCode=${decision.reasonCode} | ${decision.reason}`
+        `[decision] ${decision.action} | reasonCode=${decision.reasonCode} | chosenPool=${decision.chosenPoolId ?? "n/a"} | oldApyBps=${decision.oldNetApyBps} | newApyBps=${decision.newNetApyBps} | ${decision.reason}`
       );
 
       const execution = await executor.execute({

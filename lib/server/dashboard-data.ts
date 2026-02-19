@@ -3,7 +3,14 @@ import "server-only";
 import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { createPublicClient, erc20Abi, formatUnits, http, isAddress } from "viem";
+import {
+  createPublicClient,
+  erc20Abi,
+  formatUnits,
+  http,
+  isAddress,
+  parseAbi
+} from "viem";
 import type {
   AgentTransaction,
   AgentStatus,
@@ -17,6 +24,7 @@ import type {
   Snapshot,
   Tweet
 } from "@/lib/types";
+import type { DashboardProfile } from "@/lib/server/dashboard-profiles";
 
 type DecisionAction = "HOLD" | "ENTER" | "ROTATE" | "EXIT_TO_USDC";
 type BotTweetType = "DEPLOYED" | "ROTATED" | "EMERGENCY_EXIT";
@@ -91,20 +99,48 @@ const DEFAULT_EXPLORER_TX_BASE_URL = "https://monadscan.com/tx/";
 const DEFAULT_DEPEG_THRESHOLD_PCT = 1;
 const DEFAULT_SLIPPAGE_THRESHOLD_PCT = 0.3;
 const DEFAULT_APR_CLIFF_THRESHOLD_PCT = 50;
-const DEFAULT_USDC_DECIMALS = 6;
+const DEFAULT_VAULT_TOKEN_DECIMALS = 6;
 const DEFAULT_RPC_URL = "https://rpc.monad.xyz";
+const DEFAULT_COINGECKO_API_BASE_URL = "https://api.coingecko.com/api/v3";
+
+const TREASURY_VAULT_OVERVIEW_ABI = parseAbi([
+  "function depositToken() view returns (address)",
+  "function totalAssets() view returns (uint256)",
+  "function totalUserShares() view returns (uint256)"
+]);
+
+interface VaultAggregateMetrics {
+  totalDepositsUsd: number | null;
+  totalLiquidityUsd: number | null;
+  totalVaultCount: number;
+}
 
 interface ChainConfig {
   chainId: number;
   tokens: {
     USDC: string;
+    AUSD?: string;
+    MON?: string;
+    WMON?: string;
   };
+}
+
+interface DashboardProfileOverrides {
+  remoteBotStateUrl?: string;
+  remoteBotStateAuthToken?: string;
+  vaultAddress?: string;
+  vaultTokenAddress?: string;
+  vaultTokenDecimals?: number;
+  vaultTokenSymbol?: string;
 }
 
 const CHAIN_CONFIG = loadChainConfig();
 
-export async function getDashboardData(): Promise<DashboardData> {
-  const stateResult = await readBotState();
+export async function getDashboardData(
+  profile?: DashboardProfile
+): Promise<DashboardData> {
+  const profileOverrides = resolveProfileOverrides(profile);
+  const stateResult = await readBotState(profileOverrides);
   const state = stateResult.state;
   const hasStateData =
     Boolean(state.position) ||
@@ -122,35 +158,67 @@ export async function getDashboardData(): Promise<DashboardData> {
     latestDecision?.timestamp ?? 0
   );
 
-  const currentPosition = mapCurrentPosition(state, poolMetaById, snapshotsByPool);
-  const guardStatus = mapGuardStatus(state, activePoolId, latestSnapshot?.timestamp ?? null);
-  const agentStatus = deriveAgentStatus(latestTimestamp);
-  const apySnapshots = mapApySnapshots(state.snapshots, activePoolId);
   const isDryRun = envBool("DRY_RUN", true);
   const liveModeArmed = envBool("LIVE_MODE_ARMED", false);
   const chainId = envNumber("MONAD_CHAIN_ID", CHAIN_CONFIG.chainId);
-  const vaultAddress = envString("VAULT_ADDRESS", ZERO_ADDRESS);
-  const usdcTokenAddress = envString("USDC_TOKEN_ADDRESS", CHAIN_CONFIG.tokens.USDC);
-  const usdcDecimals = Math.max(0, Math.floor(envNumber("USDC_DECIMALS", DEFAULT_USDC_DECIMALS)));
+  const vaultAddress =
+    profileOverrides.vaultAddress ?? envString("VAULT_ADDRESS", ZERO_ADDRESS);
+  const vaultTokenAddress =
+    profileOverrides.vaultTokenAddress ??
+    envString(
+      "VAULT_DEPOSIT_TOKEN_ADDRESS",
+      envString("USDC_TOKEN_ADDRESS", CHAIN_CONFIG.tokens.USDC)
+    );
+  const vaultTokenDecimals =
+    profileOverrides.vaultTokenDecimals ??
+    Math.max(
+      0,
+      Math.floor(
+        envNumber(
+          "VAULT_DEPOSIT_TOKEN_DECIMALS",
+          envNumber("USDC_DECIMALS", DEFAULT_VAULT_TOKEN_DECIMALS)
+        )
+      )
+    );
+  const vaultTokenSymbol =
+    profileOverrides.vaultTokenSymbol ?? resolveVaultTokenSymbol(vaultTokenAddress);
+  const vaultAddresses = resolveVaultAddresses(vaultAddress);
   const rpcUrl = envString("MONAD_RPC_URL", DEFAULT_RPC_URL);
   const explorerTxBaseUrl = envString(
     "EXPLORER_TX_BASE_URL",
     DEFAULT_EXPLORER_TX_BASE_URL
   );
+  const currentPosition = mapCurrentPosition(
+    state,
+    poolMetaById,
+    snapshotsByPool,
+    vaultTokenSymbol
+  );
+  const guardStatus = mapGuardStatus(state, activePoolId, latestSnapshot?.timestamp ?? null);
+  const agentStatus = deriveAgentStatus(latestTimestamp);
+  const apySnapshots = mapApySnapshots(state.snapshots, activePoolId);
   const { rotations, transactions } = mapDecisionHistory(
     state,
     poolMetaById,
     snapshotsByPool,
-    isDryRun
+    isDryRun,
+    vaultTokenSymbol
   );
   const availablePools = mapAvailablePools(poolMetaById);
   const latestDecisionRow = mapLatestDecision(latestDecision);
-  const vaultUsdcBalance = await readVaultUsdcBalance({
+  const vaultTokenBalance = await readVaultTokenBalance({
     rpcUrl,
     vaultAddress,
-    usdcTokenAddress,
-    usdcDecimals
+    tokenAddress: vaultTokenAddress,
+    tokenDecimals: vaultTokenDecimals
   });
+  const aggregateMetrics = await readVaultAggregateMetrics({
+    rpcUrl,
+    vaultAddresses
+  });
+  const usdcTokenAddress = vaultTokenAddress;
+  const usdcDecimals = vaultTokenDecimals;
+  const vaultUsdcBalance = vaultTokenBalance;
   const tweets = mapTweets(state.tweets, isDryRun);
   const nextTweetPreview = buildPreviewTweet(currentPosition, guardStatus, agentStatus);
 
@@ -171,6 +239,13 @@ export async function getDashboardData(): Promise<DashboardData> {
     liveModeArmed,
     chainId,
     vaultAddress,
+    vaultTokenAddress,
+    vaultTokenDecimals,
+    vaultTokenSymbol,
+    vaultTokenBalance,
+    totalDepositsUsd: aggregateMetrics.totalDepositsUsd,
+    totalLiquidityUsd: aggregateMetrics.totalLiquidityUsd,
+    totalVaultCount: aggregateMetrics.totalVaultCount,
     usdcTokenAddress,
     usdcDecimals,
     vaultUsdcBalance,
@@ -180,10 +255,18 @@ export async function getDashboardData(): Promise<DashboardData> {
   };
 }
 
-async function readBotState(): Promise<ReadBotStateResult> {
+async function readBotState(
+  overrides: DashboardProfileOverrides = {}
+): Promise<ReadBotStateResult> {
   const remoteUrl =
-    process.env.BOT_STATE_URL?.trim() || process.env.BOT_STATE_JSON_URL?.trim() || "";
-  const remoteAuthToken = process.env.BOT_STATE_AUTH_TOKEN?.trim() || "";
+    overrides.remoteBotStateUrl?.trim() ||
+    process.env.BOT_STATE_URL?.trim() ||
+    process.env.BOT_STATE_JSON_URL?.trim() ||
+    "";
+  const remoteAuthToken =
+    overrides.remoteBotStateAuthToken?.trim() ||
+    process.env.BOT_STATE_AUTH_TOKEN?.trim() ||
+    "";
   if (remoteUrl) {
     const warnings: string[] = [];
     try {
@@ -396,7 +479,8 @@ function emptyBotState(): BotState {
 function mapCurrentPosition(
   state: BotState,
   poolMetaById: Map<string, { pair: string; protocol: string }>,
-  snapshotsByPool: Map<string, BotSnapshot[]>
+  snapshotsByPool: Map<string, BotSnapshot[]>,
+  vaultTokenSymbol: string
 ): Position {
   const minHoldHours = envNumber("MIN_HOLD_HOURS", DEFAULT_MIN_HOLD_HOURS);
   const rotationDeltaPct = envNumber("ROTATION_DELTA_PCT", DEFAULT_ROTATION_DELTA_PCT);
@@ -405,13 +489,13 @@ function mapCurrentPosition(
 
   if (!state.position?.poolId) {
     const latest = getLatestSnapshot(state.snapshots);
-    const pair = state.position?.pair ?? latest?.pair ?? "USDC/MON";
+    const pair = state.position?.pair ?? latest?.pair ?? `${vaultTokenSymbol}/MON`;
 
     return {
-      id: "parked-usdc",
+      id: `parked-${vaultTokenSymbol.toLowerCase()}`,
       pair,
       protocol: "Treasury",
-      pool: "USDC Parking",
+      pool: `${vaultTokenSymbol} Parking`,
       netApy: 0,
       breakdown: {
         fees: 0,
@@ -440,7 +524,7 @@ function mapCurrentPosition(
 
   return {
     id: poolId,
-    pair: state.position.pair ?? poolMeta?.pair ?? "USDC/MON",
+    pair: state.position.pair ?? poolMeta?.pair ?? `${vaultTokenSymbol}/MON`,
     protocol: state.position.protocol ?? poolMeta?.protocol ?? "Unknown",
     pool: poolLabel(poolId, poolMetaById),
     netApy: round(netApy, 1),
@@ -482,7 +566,8 @@ function mapDecisionHistory(
   state: BotState,
   poolMetaById: Map<string, { pair: string; protocol: string }>,
   snapshotsByPool: Map<string, BotSnapshot[]>,
-  isDryRun: boolean
+  isDryRun: boolean,
+  vaultTokenSymbol: string
 ): { rotations: Rotation[]; transactions: AgentTransaction[] } {
   const actionToTweetType: Record<Exclude<DecisionAction, "HOLD">, BotTweetType> = {
     ENTER: "DEPLOYED",
@@ -515,7 +600,7 @@ function mapDecisionHistory(
 
     const oldApy = round(resolveNetApyAt(snapshotsByPool, fromPoolId, decision.timestamp), 1);
     const newApy = round(resolveNetApyAt(snapshotsByPool, toPoolId, decision.timestamp), 1);
-    const pair = inferPair(fromPoolId, toPoolId, poolMetaById);
+    const pair = inferPair(fromPoolId, toPoolId, poolMetaById, vaultTokenSymbol);
     const txHash = takeNearestTxHash(
       tweetPool,
       consumedTweetIndexes,
@@ -531,9 +616,9 @@ function mapDecisionHistory(
       fromPool: fromPoolId
         ? poolLabel(fromPoolId, poolMetaById)
         : decision.action === "ENTER"
-          ? "USDC Parking"
+          ? `${vaultTokenSymbol} Parking`
           : "Unknown",
-      toPool: toPoolId ? poolLabel(toPoolId, poolMetaById) : "USDC Parking",
+      toPool: toPoolId ? poolLabel(toPoolId, poolMetaById) : `${vaultTokenSymbol} Parking`,
       oldApy,
       newApy,
       reason: decision.reason,
@@ -782,11 +867,12 @@ function poolLabel(
 function inferPair(
   fromPoolId: string | null,
   toPoolId: string | null,
-  poolMetaById: Map<string, { pair: string; protocol: string }>
+  poolMetaById: Map<string, { pair: string; protocol: string }>,
+  vaultTokenSymbol: string
 ): string {
-  if (toPoolId) return poolMetaById.get(toPoolId)?.pair ?? "USDC/MON";
-  if (fromPoolId) return poolMetaById.get(fromPoolId)?.pair ?? "USDC/MON";
-  return "USDC/MON";
+  if (toPoolId) return poolMetaById.get(toPoolId)?.pair ?? `${vaultTokenSymbol}/MON`;
+  if (fromPoolId) return poolMetaById.get(fromPoolId)?.pair ?? `${vaultTokenSymbol}/MON`;
+  return `${vaultTokenSymbol}/MON`;
 }
 
 function resolveNetApyAt(
@@ -932,6 +1018,87 @@ function envBool(name: string, fallback: boolean): boolean {
   return raw.toLowerCase() === "true";
 }
 
+function envOptional(name: string): string | undefined {
+  const raw = process.env[name];
+  if (!raw) return undefined;
+  const trimmed = raw.trim();
+  return trimmed || undefined;
+}
+
+function envOptionalInteger(name: string): number | undefined {
+  const raw = envOptional(name);
+  if (!raw) return undefined;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return undefined;
+  return Math.max(0, Math.floor(parsed));
+}
+
+function resolveProfileOverrides(profile?: DashboardProfile): DashboardProfileOverrides {
+  if (!profile) return {};
+
+  const suffix = profile.toUpperCase();
+  const remoteBotStateUrl =
+    envOptional(`BOT_STATE_URL_${suffix}`) ??
+    envOptional("BOT_STATE_URL") ??
+    envOptional("BOT_STATE_JSON_URL");
+  const remoteBotStateAuthToken =
+    envOptional(`BOT_STATE_AUTH_TOKEN_${suffix}`) ?? envOptional("BOT_STATE_AUTH_TOKEN");
+
+  if (profile === "usdc") {
+    return {
+      remoteBotStateUrl,
+      remoteBotStateAuthToken,
+      vaultAddress: envOptional("VAULT_ADDRESS_USDC") ?? envOptional("VAULT_ADDRESS"),
+      vaultTokenAddress:
+        envOptional("VAULT_DEPOSIT_TOKEN_ADDRESS_USDC") ??
+        envOptional("USDC_TOKEN_ADDRESS") ??
+        CHAIN_CONFIG.tokens.USDC,
+      vaultTokenDecimals:
+        envOptionalInteger("VAULT_DEPOSIT_TOKEN_DECIMALS_USDC") ??
+        envOptionalInteger("USDC_DECIMALS") ??
+        DEFAULT_VAULT_TOKEN_DECIMALS,
+      vaultTokenSymbol: envOptional("VAULT_DEPOSIT_TOKEN_SYMBOL_USDC") ?? "USDC"
+    };
+  }
+
+  if (profile === "ausd") {
+    return {
+      remoteBotStateUrl,
+      remoteBotStateAuthToken,
+      vaultAddress:
+        envOptional("VAULT_ADDRESS_AUSD") ??
+        envOptional("VAULT_AUSD_ADDRESS") ??
+        envOptional("VAULT_ADDRESS"),
+      vaultTokenAddress:
+        envOptional("VAULT_DEPOSIT_TOKEN_ADDRESS_AUSD") ??
+        envOptional("AUSD_TOKEN_ADDRESS") ??
+        CHAIN_CONFIG.tokens.AUSD,
+      vaultTokenDecimals:
+        envOptionalInteger("VAULT_DEPOSIT_TOKEN_DECIMALS_AUSD") ??
+        envOptionalInteger("AUSD_DECIMALS") ??
+        6,
+      vaultTokenSymbol: envOptional("VAULT_DEPOSIT_TOKEN_SYMBOL_AUSD") ?? "AUSD"
+    };
+  }
+
+  return {
+    remoteBotStateUrl,
+    remoteBotStateAuthToken,
+    vaultAddress:
+      envOptional("VAULT_ADDRESS_SHMON") ??
+      envOptional("VAULT_SHMON_ADDRESS") ??
+      envOptional("VAULT_ADDRESS"),
+    vaultTokenAddress:
+      envOptional("VAULT_DEPOSIT_TOKEN_ADDRESS_SHMON") ??
+      envOptional("TOKEN_SHMON_ADDRESS"),
+    vaultTokenDecimals:
+      envOptionalInteger("VAULT_DEPOSIT_TOKEN_DECIMALS_SHMON") ??
+      envOptionalInteger("SHMON_DECIMALS") ??
+      18,
+    vaultTokenSymbol: envOptional("VAULT_DEPOSIT_TOKEN_SYMBOL_SHMON") ?? "shMON"
+  };
+}
+
 function loadChainConfig(): ChainConfig {
   try {
     const raw = readFileSync(CHAIN_CONFIG_PATH, "utf8");
@@ -945,26 +1112,41 @@ function loadChainConfig(): ChainConfig {
         USDC:
           typeof parsed.tokens?.USDC === "string"
             ? parsed.tokens.USDC
-            : "0x754704Bc059F8C67012fEd69BC8A327a5aafb603"
+            : "0x754704Bc059F8C67012fEd69BC8A327a5aafb603",
+        AUSD:
+          typeof parsed.tokens?.AUSD === "string"
+            ? parsed.tokens.AUSD
+            : "0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a",
+        MON:
+          typeof parsed.tokens?.MON === "string"
+            ? parsed.tokens.MON
+            : "0x0000000000000000000000000000000000000000",
+        WMON:
+          typeof parsed.tokens?.WMON === "string"
+            ? parsed.tokens.WMON
+            : "0x3bd359C1119dA7Da1D913D1C4D2B7c461115433A"
       }
     };
   } catch {
     return {
       chainId: 143,
       tokens: {
-        USDC: "0x754704Bc059F8C67012fEd69BC8A327a5aafb603"
+        USDC: "0x754704Bc059F8C67012fEd69BC8A327a5aafb603",
+        AUSD: "0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a",
+        MON: "0x0000000000000000000000000000000000000000",
+        WMON: "0x3bd359C1119dA7Da1D913D1C4D2B7c461115433A"
       }
     };
   }
 }
 
-async function readVaultUsdcBalance(input: {
+async function readVaultTokenBalance(input: {
   rpcUrl: string;
   vaultAddress: string;
-  usdcTokenAddress: string;
-  usdcDecimals: number;
+  tokenAddress: string;
+  tokenDecimals: number;
 }): Promise<number | null> {
-  if (!isAddress(input.vaultAddress) || !isAddress(input.usdcTokenAddress)) {
+  if (!isAddress(input.vaultAddress) || !isAddress(input.tokenAddress)) {
     return null;
   }
   try {
@@ -972,16 +1154,241 @@ async function readVaultUsdcBalance(input: {
       transport: http(input.rpcUrl)
     });
     const raw = await client.readContract({
-      address: input.usdcTokenAddress,
+      address: input.tokenAddress,
       abi: erc20Abi,
       functionName: "balanceOf",
       args: [input.vaultAddress]
     });
-    const parsed = Number(formatUnits(raw, input.usdcDecimals));
+    const parsed = Number(formatUnits(raw, input.tokenDecimals));
     return Number.isFinite(parsed) ? parsed : null;
   } catch {
     return null;
   }
+}
+
+function resolveVaultAddresses(primaryVaultAddress: string): string[] {
+  const configured = process.env.VAULT_ADDRESSES?.trim() || "";
+  const candidates = configured
+    ? configured
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean)
+    : [primaryVaultAddress];
+  const deduped = [...new Set(candidates)];
+  return deduped.length ? deduped : [primaryVaultAddress];
+}
+
+async function readVaultAggregateMetrics(input: {
+  rpcUrl: string;
+  vaultAddresses: string[];
+}): Promise<VaultAggregateMetrics> {
+  const vaultAddresses = input.vaultAddresses.filter((address) => isAddress(address));
+  if (!vaultAddresses.length) {
+    return {
+      totalDepositsUsd: null,
+      totalLiquidityUsd: null,
+      totalVaultCount: 0
+    };
+  }
+
+  const client = createPublicClient({
+    transport: http(input.rpcUrl)
+  });
+
+  const perVault: Array<{
+    tokenSymbol: string;
+    tokenDecimals: number;
+    totalDepositsRaw: bigint;
+    totalLiquidityRaw: bigint;
+  }> = [];
+
+  for (const vaultAddress of vaultAddresses) {
+    try {
+      const tokenAddress = (await client.readContract({
+        address: vaultAddress,
+        abi: TREASURY_VAULT_OVERVIEW_ABI,
+        functionName: "depositToken"
+      })) as string;
+      if (!isAddress(tokenAddress)) continue;
+
+      const [totalLiquidityRaw, totalDepositsRaw, tokenDecimalsRaw] = await Promise.all([
+        client.readContract({
+          address: vaultAddress,
+          abi: TREASURY_VAULT_OVERVIEW_ABI,
+          functionName: "totalAssets"
+        }),
+        client.readContract({
+          address: vaultAddress,
+          abi: TREASURY_VAULT_OVERVIEW_ABI,
+          functionName: "totalUserShares"
+        }),
+        client.readContract({
+          address: tokenAddress,
+          abi: erc20Abi,
+          functionName: "decimals"
+        })
+      ]);
+
+      const tokenDecimals = Number(tokenDecimalsRaw);
+      perVault.push({
+        tokenSymbol: resolveVaultTokenSymbol(tokenAddress),
+        tokenDecimals: Number.isFinite(tokenDecimals) ? tokenDecimals : DEFAULT_VAULT_TOKEN_DECIMALS,
+        totalDepositsRaw: totalDepositsRaw as bigint,
+        totalLiquidityRaw: totalLiquidityRaw as bigint
+      });
+    } catch {
+      continue;
+    }
+  }
+
+  if (!perVault.length) {
+    return {
+      totalDepositsUsd: null,
+      totalLiquidityUsd: null,
+      totalVaultCount: 0
+    };
+  }
+
+  const pricesBySymbol = await readTokenPricesUsd(
+    [...new Set(perVault.map((row) => row.tokenSymbol.toUpperCase()))]
+  );
+
+  let totalDepositsUsd = 0;
+  let totalLiquidityUsd = 0;
+  let hasPricedVault = false;
+  for (const row of perVault) {
+    const price = pricesBySymbol[row.tokenSymbol.toUpperCase()];
+    if (typeof price !== "number" || !Number.isFinite(price) || price <= 0) continue;
+    const deposits = Number(formatUnits(row.totalDepositsRaw, row.tokenDecimals));
+    const liquidity = Number(formatUnits(row.totalLiquidityRaw, row.tokenDecimals));
+    if (!Number.isFinite(deposits) || !Number.isFinite(liquidity)) continue;
+    totalDepositsUsd += deposits * price;
+    totalLiquidityUsd += liquidity * price;
+    hasPricedVault = true;
+  }
+
+  return {
+    totalDepositsUsd: hasPricedVault ? round(totalDepositsUsd, 2) : null,
+    totalLiquidityUsd: hasPricedVault ? round(totalLiquidityUsd, 2) : null,
+    totalVaultCount: perVault.length
+  };
+}
+
+async function readTokenPricesUsd(symbols: string[]): Promise<Record<string, number>> {
+  const result: Record<string, number> = {};
+  const stableSymbols = resolveStableSymbols();
+  for (const symbol of symbols) {
+    const normalized = symbol.trim().toUpperCase();
+    if (!normalized) continue;
+    if (stableSymbols.has(normalized)) {
+      result[normalized] = 1;
+    }
+  }
+
+  const idBySymbol = resolveCoingeckoIdBySymbol();
+  const pairs = symbols
+    .map((symbol) => symbol.trim().toUpperCase())
+    .filter(Boolean)
+    .map((symbol) => ({
+      symbol,
+      id: idBySymbol[symbol]
+    }))
+    .filter((item) => typeof item.id === "string" && item.id.length > 0) as Array<{
+    symbol: string;
+    id: string;
+  }>;
+  if (!pairs.length) return result;
+
+  const ids = [...new Set(pairs.map((pair) => pair.id))];
+  const endpoint = `${envString(
+    "COINGECKO_API_BASE_URL",
+    DEFAULT_COINGECKO_API_BASE_URL
+  ).replace(/\/$/, "")}/simple/price?ids=${encodeURIComponent(ids.join(","))}&vs_currencies=usd`;
+  const headers: Record<string, string> = {
+    Accept: "application/json"
+  };
+  const apiKey = process.env.COINGECKO_API_KEY?.trim() || "";
+  if (apiKey) {
+    if (endpoint.toLowerCase().includes("pro-api.coingecko.com")) {
+      headers["x-cg-pro-api-key"] = apiKey;
+    } else {
+      headers["x-cg-demo-api-key"] = apiKey;
+    }
+  }
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "GET",
+      headers,
+      cache: "no-store",
+      next: { revalidate: 0 }
+    });
+    if (!response.ok) {
+      return result;
+    }
+    const payload = (await response.json()) as Record<
+      string,
+      {
+        usd?: number;
+      }
+    >;
+    for (const { symbol, id } of pairs) {
+      const price = payload[id]?.usd;
+      if (typeof price === "number" && Number.isFinite(price) && price > 0) {
+        result[symbol] = price;
+      }
+    }
+  } catch {
+    // Ignore network errors and fall back to any static stable prices already populated.
+  }
+
+  return result;
+}
+
+function resolveStableSymbols(): Set<string> {
+  const configured = process.env.STABLE_PRICE_SYMBOLS?.trim() || "USDC,AUSD";
+  const values = configured
+    .split(",")
+    .map((value) => value.trim().toUpperCase())
+    .filter(Boolean);
+  return new Set(values);
+}
+
+function resolveCoingeckoIdBySymbol(): Record<string, string> {
+  const monId = envString("COINGECKO_ID_MON", "monad");
+  return {
+    USDC: envString("COINGECKO_ID_USDC", "usd-coin"),
+    AUSD: envString("COINGECKO_ID_AUSD", ""),
+    MON: monId,
+    WMON: monId,
+    SHMON: envString("COINGECKO_ID_SHMON", monId),
+    KMON: envString("COINGECKO_ID_KMON", "")
+  };
+}
+
+function resolveVaultTokenSymbol(tokenAddress: string): string {
+  const explicit = process.env.VAULT_DEPOSIT_TOKEN_SYMBOL?.trim();
+  if (explicit) return explicit;
+
+  if (!isAddress(tokenAddress)) return "TOKEN";
+  const normalized = tokenAddress.toLowerCase();
+
+  const knownPairs: Array<[string | undefined, string]> = [
+    [CHAIN_CONFIG.tokens.USDC, "USDC"],
+    [CHAIN_CONFIG.tokens.AUSD, "AUSD"],
+    [CHAIN_CONFIG.tokens.WMON, "WMON"],
+    [process.env.TOKEN_SHMON, "shMON"],
+    [process.env.TOKEN_SHMON_ADDRESS, "shMON"],
+    [process.env.TOKEN_KMON, "kMON"],
+    [process.env.TOKEN_KMON_ADDRESS, "kMON"]
+  ];
+  for (const [candidate, symbol] of knownPairs) {
+    if (candidate && isAddress(candidate) && candidate.toLowerCase() === normalized) {
+      return symbol;
+    }
+  }
+
+  return "TOKEN";
 }
 
 function toIsoString(seconds: number): string {

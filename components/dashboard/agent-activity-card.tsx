@@ -5,7 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { LatestDecision } from "@/lib/types";
 
 interface AgentActivityCardProps {
-  vaultUsdcBalance: number | null;
+  totalDepositsUsd: number | null;
+  totalLiquidityUsd: number | null;
+  totalVaultCount: number;
   latestDecision: LatestDecision | null;
 }
 
@@ -20,9 +22,20 @@ function formatTimestamp(iso: string): string {
 }
 
 export function AgentActivityCard({
-  vaultUsdcBalance,
+  totalDepositsUsd,
+  totalLiquidityUsd,
+  totalVaultCount,
   latestDecision
 }: AgentActivityCardProps) {
+  const formatUsd = (value: number | null): string => {
+    if (value === null || !Number.isFinite(value)) return "Unavailable";
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: 2
+    }).format(value);
+  };
+
   return (
     <Card className="border-border bg-card">
       <CardHeader className="pb-3">
@@ -32,14 +45,21 @@ export function AgentActivityCard({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="rounded-lg bg-secondary/50 p-3">
-          <p className="mb-1 flex items-center gap-1 text-xs text-muted-foreground">
-            <Wallet className="h-3.5 w-3.5" />
-            Vault USDC balance
-          </p>
-          <p className="text-lg font-semibold text-foreground">
-            {vaultUsdcBalance === null ? "Unavailable" : `${vaultUsdcBalance.toFixed(6)} USDC`}
-          </p>
+        <div className="grid gap-2 md:grid-cols-2">
+          <div className="rounded-lg bg-secondary/50 p-3">
+            <p className="mb-1 flex items-center gap-1 text-xs text-muted-foreground">
+              <Wallet className="h-3.5 w-3.5" />
+              Total deposits ({totalVaultCount} vaults)
+            </p>
+            <p className="text-lg font-semibold text-foreground">{formatUsd(totalDepositsUsd)}</p>
+          </div>
+          <div className="rounded-lg bg-secondary/50 p-3">
+            <p className="mb-1 flex items-center gap-1 text-xs text-muted-foreground">
+              <Wallet className="h-3.5 w-3.5" />
+              Liquidity / TVL ({totalVaultCount} vaults)
+            </p>
+            <p className="text-lg font-semibold text-foreground">{formatUsd(totalLiquidityUsd)}</p>
+          </div>
         </div>
 
         <div className="rounded-lg border border-border p-3">
