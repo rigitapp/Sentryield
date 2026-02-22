@@ -91,6 +91,15 @@ function trimAmount(raw: string): string {
   return raw.replace(/[^\d.]/g, "");
 }
 
+function formatSignedTokenAmount(value: bigint, decimals: number): string {
+  const sign = value < 0n ? "-" : "+";
+  const absolute = value < 0n ? -value : value;
+  const normalized = formatUnits(absolute, decimals);
+  const [whole, fraction = ""] = normalized.split(".");
+  const compactFraction = fraction.slice(0, 6).replace(/0+$/, "");
+  return compactFraction ? `${sign}${whole}.${compactFraction}` : `${sign}${whole}`;
+}
+
 export function DepositUsdcCard({
   chainId,
   vaultAddress,
@@ -224,6 +233,12 @@ export function DepositUsdcCard({
   const maxWithdrawValue = typeof maxWithdrawRaw === "bigint" ? maxWithdrawRaw : 0n;
   const hasOpenLpPosition = hasOpenLpPositionRaw === true;
   const supportsAnytimeLiquidity = supportsAnytimeLiquidityRaw === true;
+  const canEstimatePnl = isVaultUserFlowAvailable && (supportsAnytimeLiquidity || !hasOpenLpPosition);
+  const estimatedPnlRaw = canEstimatePnl ? maxWithdrawValue - userSharesValue : null;
+  const estimatedPnlText =
+    estimatedPnlRaw !== null
+      ? `${formatSignedTokenAmount(estimatedPnlRaw, tokenDecimals)} ${tokenSymbol}`
+      : null;
 
   const balanceText =
     walletBalanceValue !== null ? formatUnits(walletBalanceValue, tokenDecimals) : null;
@@ -710,6 +725,11 @@ export function DepositUsdcCard({
             <p>Your vault shares: {sharesText}</p>
             <p>
               Withdrawable now: {maxWithdrawText} {tokenSymbol}
+            </p>
+            <p>
+              Estimated PnL:{" "}
+              {estimatedPnlText ??
+                `unavailable while capital is deployed (visible when parked in ${tokenSymbol})`}
             </p>
             <p>
               Vault state:{" "}

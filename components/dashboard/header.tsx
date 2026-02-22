@@ -1,10 +1,19 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronDown, LogOut, Network, Wallet } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { ArrowDownToLine, ChevronDown, LogOut, Network, Wallet } from "lucide-react";
 import { useAccount, useChainId, useConnect, useDisconnect, useSwitchChain } from "wagmi";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,11 +22,46 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/select";
 import type { AgentStatus } from "@/lib/types";
 
 interface HeaderProps {
   status: AgentStatus;
 }
+
+type DashboardRoute = "usdc" | "ausd" | "shmon";
+
+const DASHBOARD_ROUTES: Array<{
+  id: DashboardRoute;
+  label: string;
+  route: string;
+  description: string;
+}> = [
+  {
+    id: "usdc",
+    label: "USDC",
+    route: "/usdc",
+    description: "USDC vault dashboard and wallet deposit flow."
+  },
+  {
+    id: "ausd",
+    label: "AUSD",
+    route: "/ausd",
+    description: "AUSD vault dashboard and wallet deposit flow."
+  },
+  {
+    id: "shmon",
+    label: "shMON",
+    route: "/shmon",
+    description: "shMON vault dashboard and wallet deposit flow."
+  }
+];
 
 function shortAddress(address: string): string {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
@@ -71,7 +115,11 @@ function getConnectorMeta(connectorName: string, connectorId: string): {
 }
 
 export function Header({ status }: HeaderProps) {
+  const router = useRouter();
+  const pathname = usePathname();
   const [walletError, setWalletError] = useState<string | null>(null);
+  const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
+  const [selectedDepositToken, setSelectedDepositToken] = useState<DashboardRoute>("usdc");
   const { address, isConnected, connector: activeConnector } = useAccount();
   const chainId = useChainId();
   const { connect, connectors, error: connectError, isPending, variables } = useConnect();
@@ -134,6 +182,35 @@ export function Header({ status }: HeaderProps) {
       ? variables.connector.id
       : null;
   const activeError = walletError ?? connectError?.message ?? null;
+  const activeRoute = useMemo(() => {
+    const segment = pathname?.split("/").filter(Boolean)[0];
+    if (segment === "ausd" || segment === "shmon" || segment === "usdc") {
+      return segment;
+    }
+    return "usdc";
+  }, [pathname]);
+  const activeRouteMeta = useMemo(
+    () => DASHBOARD_ROUTES.find((option) => option.id === activeRoute) ?? DASHBOARD_ROUTES[0],
+    [activeRoute]
+  );
+  const selectedRouteMeta = useMemo(
+    () =>
+      DASHBOARD_ROUTES.find((option) => option.id === selectedDepositToken) ??
+      DASHBOARD_ROUTES[0],
+    [selectedDepositToken]
+  );
+
+  const onOpenDepositModal = () => {
+    setSelectedDepositToken(activeRoute);
+    setIsDepositModalOpen(true);
+  };
+
+  const onActivateDepositRoute = () => {
+    setIsDepositModalOpen(false);
+    if (pathname !== selectedRouteMeta.route) {
+      router.push(selectedRouteMeta.route);
+    }
+  };
 
   return (
     <header className="flex items-center justify-between border-b border-border px-6 py-4">
@@ -166,6 +243,55 @@ export function Header({ status }: HeaderProps) {
       </div>
       <div className="flex flex-col items-end gap-1">
         <div className="flex items-center gap-2">
+          <Dialog open={isDepositModalOpen} onOpenChange={setIsDepositModalOpen}>
+            <Button variant="default" className="gap-2" onClick={onOpenDepositModal}>
+              <ArrowDownToLine className="h-4 w-4" />
+              Deposit
+            </Button>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Select Deposit Token</DialogTitle>
+                <DialogDescription>
+                  Choose the token vault you want to deposit into. This sets the active dashboard
+                  page and deposit flow.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">
+                  Current active page: <span className="font-medium text-foreground">{activeRouteMeta.label}</span>
+                </p>
+                <Select
+                  value={selectedDepositToken}
+                  onValueChange={(value) => setSelectedDepositToken(value as DashboardRoute)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select token vault" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DASHBOARD_ROUTES.map((routeOption) => (
+                      <SelectItem key={routeOption.id} value={routeOption.id}>
+                        {routeOption.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">{selectedRouteMeta.description}</p>
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setIsDepositModalOpen(false)}
+                  className="bg-transparent"
+                >
+                  Cancel
+                </Button>
+                <Button onClick={onActivateDepositRoute}>
+                  Open {selectedRouteMeta.label} Deposit
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
           {isConnected ? (
             <Badge
               variant="outline"
