@@ -9,7 +9,8 @@ import {
   formatUnits,
   http,
   isAddress,
-  parseAbi
+  parseAbi,
+  parseAbiItem
 } from "viem";
 import type {
   AgentTransaction,
@@ -105,9 +106,22 @@ const DEFAULT_COINGECKO_API_BASE_URL = "https://api.coingecko.com/api/v3";
 
 const TREASURY_VAULT_OVERVIEW_ABI = parseAbi([
   "function depositToken() view returns (address)",
-  "function totalAssets() view returns (uint256)",
-  "function totalUserShares() view returns (uint256)"
+  "function totalAssets() view returns (uint256)"
 ]);
+const TREASURY_VAULT_USER_DEPOSITED_EVENT = parseAbiItem(
+  "event UserDeposited(address indexed user, uint256 amountIn, uint256 sharesOut, uint256 timestamp)"
+);
+const LOG_SCAN_MAX_BLOCK_RANGE = 100n;
+const LOG_SCAN_THROTTLE_MS = 50;
+
+interface VaultDepositFlowCacheEntry {
+  deploymentBlock: bigint;
+  lastScannedBlock: bigint;
+  cumulativeDepositsRaw: bigint;
+}
+
+const vaultDepositFlowCache = new Map<string, VaultDepositFlowCacheEntry>();
+const vaultDepositFlowInFlight = new Map<string, Promise<bigint | null>>();
 
 interface VaultAggregateMetrics {
   totalDepositsUsd: number | null;
@@ -1198,7 +1212,7 @@ async function readVaultAggregateMetrics(input: {
   const perVault: Array<{
     tokenSymbol: string;
     tokenDecimals: number;
-    totalDepositsRaw: bigint;
+    totalDepositsRaw: bigint | null;
     totalLiquidityRaw: bigint;
   }> = [];
 
@@ -1211,21 +1225,20 @@ async function readVaultAggregateMetrics(input: {
       })) as string;
       if (!isAddress(tokenAddress)) continue;
 
-      const [totalLiquidityRaw, totalDepositsRaw, tokenDecimalsRaw] = await Promise.all([
+      const [totalLiquidityRaw, tokenDecimalsRaw, cumulativeDepositsRaw] = await Promise.all([
         client.readContract({
           address: vaultAddress,
           abi: TREASURY_VAULT_OVERVIEW_ABI,
           functionName: "totalAssets"
         }),
         client.readContract({
-          address: vaultAddress,
-          abi: TREASURY_VAULT_OVERVIEW_ABI,
-          functionName: "totalUserShares"
-        }),
-        client.readContract({
           address: tokenAddress,
           abi: erc20Abi,
           functionName: "decimals"
+        }),
+        readVaultCumulativeDepositsRaw({
+          client,
+          vaultAddress
         })
       ]);
 
@@ -1233,7 +1246,8 @@ async function readVaultAggregateMetrics(input: {
       perVault.push({
         tokenSymbol: resolveVaultTokenSymbol(tokenAddress),
         tokenDecimals: Number.isFinite(tokenDecimals) ? tokenDecimals : DEFAULT_VAULT_TOKEN_DECIMALS,
-        totalDepositsRaw: totalDepositsRaw as bigint,
+        totalDepositsRaw:
+          typeof cumulativeDepositsRaw === "bigint" ? cumulativeDepositsRaw : null,
         totalLiquidityRaw: totalLiquidityRaw as bigint
       });
     } catch {
@@ -1256,22 +1270,184 @@ async function readVaultAggregateMetrics(input: {
   let totalDepositsUsd = 0;
   let totalLiquidityUsd = 0;
   let hasPricedVault = false;
+  let hasUnknownDeposits = false;
   for (const row of perVault) {
     const price = pricesBySymbol[row.tokenSymbol.toUpperCase()];
     if (typeof price !== "number" || !Number.isFinite(price) || price <= 0) continue;
-    const deposits = Number(formatUnits(row.totalDepositsRaw, row.tokenDecimals));
     const liquidity = Number(formatUnits(row.totalLiquidityRaw, row.tokenDecimals));
-    if (!Number.isFinite(deposits) || !Number.isFinite(liquidity)) continue;
+    if (Number.isFinite(liquidity)) {
+      totalLiquidityUsd += liquidity * price;
+      hasPricedVault = true;
+    }
+    if (row.totalDepositsRaw === null) {
+      hasUnknownDeposits = true;
+      continue;
+    }
+    const deposits = Number(formatUnits(row.totalDepositsRaw, row.tokenDecimals));
+    if (!Number.isFinite(deposits)) continue;
     totalDepositsUsd += deposits * price;
-    totalLiquidityUsd += liquidity * price;
-    hasPricedVault = true;
   }
 
   return {
-    totalDepositsUsd: hasPricedVault ? round(totalDepositsUsd, 2) : null,
+    totalDepositsUsd: hasPricedVault && !hasUnknownDeposits ? round(totalDepositsUsd, 2) : null,
     totalLiquidityUsd: hasPricedVault ? round(totalLiquidityUsd, 2) : null,
     totalVaultCount: perVault.length
   };
+}
+
+async function readVaultCumulativeDepositsRaw(input: {
+  client: ReturnType<typeof createPublicClient>;
+  vaultAddress: string;
+}): Promise<bigint | null> {
+  const vaultAddress = input.vaultAddress;
+  if (!isAddress(vaultAddress)) return null;
+  const key = vaultAddress.toLowerCase();
+  const inflight = vaultDepositFlowInFlight.get(key);
+  if (inflight) {
+    return inflight;
+  }
+
+  const task = (async () => {
+    const currentBlock = await input.client.getBlockNumber();
+    const cached = vaultDepositFlowCache.get(key);
+    if (cached && cached.lastScannedBlock >= currentBlock) {
+      return cached.cumulativeDepositsRaw;
+    }
+
+    const explicitStartBlock = resolveDepositScanStartBlock(vaultAddress);
+    const deploymentBlock =
+      cached?.deploymentBlock ??
+      explicitStartBlock ??
+      (await findContractDeploymentBlock({
+        client: input.client,
+        vaultAddress,
+        currentBlock
+      }));
+    const scanStartBlock = cached ? cached.lastScannedBlock + 1n : deploymentBlock;
+    if (scanStartBlock > currentBlock) {
+      const nextEntry: VaultDepositFlowCacheEntry = {
+        deploymentBlock,
+        lastScannedBlock: currentBlock,
+        cumulativeDepositsRaw: cached?.cumulativeDepositsRaw ?? 0n
+      };
+      vaultDepositFlowCache.set(key, nextEntry);
+      return nextEntry.cumulativeDepositsRaw;
+    }
+
+    let runningCumulativeDepositsRaw = cached?.cumulativeDepositsRaw ?? 0n;
+    for (
+      let fromBlock = scanStartBlock;
+      fromBlock <= currentBlock;
+      fromBlock += LOG_SCAN_MAX_BLOCK_RANGE
+    ) {
+      const toBlock = minBigInt(fromBlock + LOG_SCAN_MAX_BLOCK_RANGE - 1n, currentBlock);
+      const deposits = await input.client.getLogs({
+        address: vaultAddress,
+        event: TREASURY_VAULT_USER_DEPOSITED_EVENT,
+        fromBlock,
+        toBlock
+      });
+
+      for (const log of deposits) {
+        const amountIn = log.args.amountIn;
+        if (typeof amountIn === "bigint") {
+          runningCumulativeDepositsRaw += amountIn;
+        }
+      }
+
+      if (toBlock < currentBlock) {
+        await sleep(LOG_SCAN_THROTTLE_MS);
+      }
+    }
+
+    vaultDepositFlowCache.set(key, {
+      deploymentBlock,
+      lastScannedBlock: currentBlock,
+      cumulativeDepositsRaw: runningCumulativeDepositsRaw
+    });
+    return runningCumulativeDepositsRaw;
+  })();
+
+  vaultDepositFlowInFlight.set(key, task);
+  try {
+    return await task;
+  } catch {
+    const fallback = vaultDepositFlowCache.get(key);
+    return fallback?.cumulativeDepositsRaw ?? null;
+  } finally {
+    vaultDepositFlowInFlight.delete(key);
+  }
+}
+
+async function findContractDeploymentBlock(input: {
+  client: ReturnType<typeof createPublicClient>;
+  vaultAddress: string;
+  currentBlock: bigint;
+}): Promise<bigint> {
+  const latestCode = await input.client.getCode({
+    address: input.vaultAddress
+  });
+  if (!latestCode || latestCode === "0x") {
+    return input.currentBlock;
+  }
+
+  let low = 0n;
+  let high = input.currentBlock;
+  let firstDeployed = input.currentBlock;
+  while (low <= high) {
+    const mid = (low + high) / 2n;
+    const codeAtMid = await input.client.getCode({
+      address: input.vaultAddress,
+      blockNumber: mid
+    });
+    const hasCode = Boolean(codeAtMid && codeAtMid !== "0x");
+    if (hasCode) {
+      firstDeployed = mid;
+      if (mid === 0n) break;
+      high = mid - 1n;
+    } else {
+      low = mid + 1n;
+    }
+  }
+  return firstDeployed;
+}
+
+function resolveDepositScanStartBlock(vaultAddress: string): bigint | null {
+  const byAddress = process.env.VAULT_DEPOSIT_SCAN_START_BLOCKS?.trim() || "";
+  if (byAddress) {
+    const entries = byAddress
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+    for (const entry of entries) {
+      const [addressPart, blockPart] = entry.split(":").map((value) => value.trim());
+      if (!addressPart || !blockPart || !isAddress(addressPart)) continue;
+      if (addressPart.toLowerCase() !== vaultAddress.toLowerCase()) continue;
+      const parsed = parseNonNegativeBigInt(blockPart);
+      if (parsed !== null) return parsed;
+    }
+  }
+
+  const fallback = process.env.VAULT_DEPOSIT_SCAN_START_BLOCK?.trim() || "";
+  if (!fallback) return null;
+  return parseNonNegativeBigInt(fallback);
+}
+
+function parseNonNegativeBigInt(value: string): bigint | null {
+  try {
+    const parsed = BigInt(value);
+    return parsed >= 0n ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function minBigInt(left: bigint, right: bigint): bigint {
+  return left < right ? left : right;
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function readTokenPricesUsd(symbols: string[]): Promise<Record<string, number>> {

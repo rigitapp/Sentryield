@@ -35,7 +35,6 @@ export function AgentActivityCard({
       maximumFractionDigits: 2
     }).format(value);
   };
-
   return (
     <Card className="border-border bg-card">
       <CardHeader className="pb-3">
@@ -49,18 +48,21 @@ export function AgentActivityCard({
           <div className="rounded-lg bg-secondary/50 p-3">
             <p className="mb-1 flex items-center gap-1 text-xs text-muted-foreground">
               <Wallet className="h-3.5 w-3.5" />
-              Total deposits ({totalVaultCount} vaults)
+              Deposits (cumulative, {totalVaultCount} vaults)
             </p>
             <p className="text-lg font-semibold text-foreground">{formatUsd(totalDepositsUsd)}</p>
           </div>
           <div className="rounded-lg bg-secondary/50 p-3">
             <p className="mb-1 flex items-center gap-1 text-xs text-muted-foreground">
               <Wallet className="h-3.5 w-3.5" />
-              Liquidity / TVL ({totalVaultCount} vaults)
+              TVL (currently available, {totalVaultCount} vaults)
             </p>
             <p className="text-lg font-semibold text-foreground">{formatUsd(totalLiquidityUsd)}</p>
           </div>
         </div>
+        <p className="text-xs text-muted-foreground">
+          Deposits tracks total historical deposits-in; TVL tracks currently available assets.
+        </p>
 
         <div className="rounded-lg border border-border p-3">
           <p className="mb-1 flex items-center gap-1 text-xs text-muted-foreground">

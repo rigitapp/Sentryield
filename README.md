@@ -249,7 +249,12 @@ Known Monad discovery (current):
 8. Verify real transaction hash on Monadscan and in dashboard history.
 9. Optional dashboard aggregate metrics:
    - set `VAULT_ADDRESSES=<comma-separated vault addresses>`
-   - UI Agent Activity card shows `Total Deposits` and `Liquidity / TVL` in USD across those vaults.
+   - UI Agent Activity card shows:
+     - `Deposits` = cumulative historical deposits-in across those vaults (USD)
+     - `TVL` = current total assets currently available across those vaults (USD)
+   - Optional scan tuning:
+     - `VAULT_DEPOSIT_SCAN_START_BLOCK=<block>`
+     - `VAULT_DEPOSIT_SCAN_START_BLOCKS=<vaultA:block,vaultB:block>`
 
 ## Vault upgrade note (withdraw UX)
 

@@ -111,7 +111,7 @@ const MIN_HOLD_SECONDS = Math.max(0, envNumber("MIN_HOLD_SECONDS", 0));
 
 export const POLICY: PolicyConfig = {
   minHoldSeconds: MIN_HOLD_SECONDS,
-  rotationDeltaApyBps: 200,
+  rotationDeltaApyBps: 50,
   maxPaybackHours: 72,
   depegThresholdBps: 100,
   maxPriceImpactBps: 30,
