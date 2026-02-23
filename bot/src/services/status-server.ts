@@ -277,10 +277,11 @@ function evaluateHealth(status: BotRuntimeStatus): HealthEvaluation {
   const staleMs = status.staleAfterSeconds * 1_000;
 
   if (!status.lastTickStartedAt) {
+    const startupAgeMs = now - Date.parse(status.startedAt);
     return {
-      healthy: false,
+      healthy: startupAgeMs <= staleMs,
       ready: false,
-      reason: "tick_not_started"
+      reason: startupAgeMs <= staleMs ? "starting" : "tick_not_started"
     };
   }
 
@@ -301,8 +302,19 @@ function evaluateHealth(status: BotRuntimeStatus): HealthEvaluation {
   }
 
   if (!status.lastSuccessfulTickAt) {
+    const lastActivityAt = status.lastTickFinishedAt ?? status.lastTickStartedAt;
+    const activityAgeMs = now - Date.parse(lastActivityAt);
+    if (activityAgeMs > staleMs) {
+      return {
+        healthy: false,
+        ready: false,
+        reason: "heartbeat_stale"
+      };
+    }
     return {
-      healthy: false,
+      // Liveness should stay green while ticks are still progressing,
+      // even if they have not produced a successful cycle yet.
+      healthy: true,
       ready: false,
       reason: "no_successful_tick"
     };
